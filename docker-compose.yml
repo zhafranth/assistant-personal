@@ -1,6 +1,6 @@
 services:
   bot:
-    image: ghcr.io/zhafrantharif/personal-assistant-bot:latest
+    image: ghcr.io/zhafranth/personal-assistant-bot:latest
     build: .
     restart: unless-stopped
     depends_on:
