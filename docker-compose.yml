@@ -1,0 +1,33 @@
+services:
+  bot:
+    image: ghcr.io/zhafrantharif/personal-assistant-bot:latest
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DATABASE_URL=postgres://assistant:${DB_PASSWORD}@db:5432/assistant?sslmode=disable
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TIMEZONE=Asia/Jakarta
+      - DEFAULT_REMINDER_HOUR=7
+      - SCHEDULER_INTERVAL_SEC=30
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=assistant
+      - POSTGRES_USER=assistant
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
