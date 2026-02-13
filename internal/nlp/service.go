@@ -84,7 +84,7 @@ INTENTS:
 
 func (s *Service) callAPI(ctx context.Context, systemPrompt, userMessage string) (*ParsedIntent, error) {
 	message, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model: anthropic.ModelClaude3_5HaikuLatest,
+		Model: "claude-haiku-4-5-20251001",
 		MaxTokens: 256,
 		System: []anthropic.TextBlockParam{
 			{Text: systemPrompt},
