@@ -37,7 +37,9 @@ Timezone: %s
 
 RULES:
 - Output HANYA JSON, tanpa markdown, tanpa penjelasan
+- Format tanggal: due_date = "YYYY-MM-DD", remind_at = "YYYY-MM-DDTHH:MM:SS+07:00" (RFC3339 dengan timezone Asia/Jakarta)
 - Jika user sebut tanggal tanpa jam, default jam 07:00 WIB
+- Jika user menyebut jam/waktu, SELALU set reminder=true dan remind_at dengan waktu tersebut
 - "besok" = %s
 - "lusa" = %s
 - Nominal uang: "35rb" = 35000, "1.5jt" = 1500000, "1juta" = 1000000

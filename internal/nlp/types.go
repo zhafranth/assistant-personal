@@ -1,6 +1,9 @@
 package nlp
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type ParsedIntent struct {
 	Intent      string  `json:"intent"`
@@ -22,12 +25,20 @@ func (p *ParsedIntent) ParseRemindAt(loc *time.Location) (*time.Time, error) {
 	if p.RemindAt == "" {
 		return nil, nil
 	}
-	t, err := time.Parse(time.RFC3339, p.RemindAt)
-	if err != nil {
-		return nil, err
+	// Try RFC3339 first (e.g. 2026-02-13T23:18:00+07:00)
+	if t, err := time.Parse(time.RFC3339, p.RemindAt); err == nil {
+		t = t.In(loc)
+		return &t, nil
 	}
-	t = t.In(loc)
-	return &t, nil
+	// Try without timezone (e.g. 2026-02-13T23:18:00)
+	if t, err := time.ParseInLocation("2006-01-02T15:04:05", p.RemindAt, loc); err == nil {
+		return &t, nil
+	}
+	// Try date + time without seconds (e.g. 2026-02-13T23:18)
+	if t, err := time.ParseInLocation("2006-01-02T15:04", p.RemindAt, loc); err == nil {
+		return &t, nil
+	}
+	return nil, fmt.Errorf("unsupported remind_at format: %s", p.RemindAt)
 }
 
 func (p *ParsedIntent) ParseDueDate(loc *time.Location) (*time.Time, error) {
