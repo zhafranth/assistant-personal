@@ -55,6 +55,9 @@ CONTOH BULK:
 - "edit todo beli susu jadi beli madu" → 1 elemen edit_todo dengan search="beli susu", title="beli madu"
 - "kosongkan todo" → 1 elemen clear_todo (tanpa nama spesifik = hapus semua)
 - "buat done semua todo" → 1 elemen clear_todo HANYA jika tidak ada nama spesifik yang disebutkan
+- "catat makan siang 35rb, bensin 50rb, parkir 5rb" → 3 elemen add_expense
+- "catat makan siang 35rb dan bensin 50rb" → 2 elemen add_expense
+- "hapus pengeluaran parkir dan bensin" → 2 elemen delete_expense (search="parkir", search="bensin")
 
 INTENTS:
 - add_todo: {title, reminder?, remind_at?, recurring?, due_date?}
