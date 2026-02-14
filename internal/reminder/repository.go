@@ -88,6 +88,40 @@ func (r *Repository) UpdateRemindAt(ctx context.Context, id int, nextTime time.T
 	return nil
 }
 
+type TodoReminder struct {
+	TodoID         int
+	TodoTitle      string
+	RemindAt       time.Time
+	IsRecurring    bool
+	RecurrenceRule *string
+}
+
+func (r *Repository) ListActiveByUser(ctx context.Context, userID int64) ([]TodoReminder, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT r.todo_id, t.title, r.remind_at, r.is_recurring, r.recurrence_rule
+		 FROM reminders r
+		 JOIN todos t ON t.id = r.todo_id
+		 WHERE t.user_id = $1 AND r.is_active = TRUE AND t.deleted_at IS NULL
+		 ORDER BY r.remind_at ASC`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list active reminders by user: %w", err)
+	}
+	defer rows.Close()
+
+	var reminders []TodoReminder
+	for rows.Next() {
+		var tr TodoReminder
+		err := rows.Scan(&tr.TodoID, &tr.TodoTitle, &tr.RemindAt, &tr.IsRecurring, &tr.RecurrenceRule)
+		if err != nil {
+			return nil, fmt.Errorf("scan todo reminder: %w", err)
+		}
+		reminders = append(reminders, tr)
+	}
+	return reminders, rows.Err()
+}
+
 func (r *Repository) Deactivate(ctx context.Context, id int) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE reminders SET is_active = FALSE, last_fired_at = NOW() WHERE id = $1`,

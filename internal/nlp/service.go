@@ -25,18 +25,19 @@ func NewService(apiKey string, timezone *time.Location) *Service {
 	}
 }
 
-func (s *Service) Parse(ctx context.Context, userMessage string) (*ParsedIntent, error) {
+func (s *Service) Parse(ctx context.Context, userMessage string) ([]ParsedIntent, error) {
 	now := time.Now().In(s.timezone)
 	tomorrow := now.AddDate(0, 0, 1)
 	dayAfterTomorrow := now.AddDate(0, 0, 2)
 
-	systemPrompt := fmt.Sprintf(`Kamu adalah parser untuk personal assistant bot. Tugas kamu HANYA mengubah pesan user menjadi JSON.
+	systemPrompt := fmt.Sprintf(`Kamu adalah parser untuk personal assistant bot. Tugas kamu HANYA mengubah pesan user menjadi JSON array.
 
 Hari ini: %s
 Timezone: %s
 
 RULES:
-- Output HANYA JSON, tanpa markdown, tanpa penjelasan
+- Output HANYA JSON array (selalu dalam bentuk array [...]), tanpa markdown, tanpa penjelasan
+- Jika user melakukan 1 aksi, return array dengan 1 elemen. Jika multiple aksi, return array dengan banyak elemen
 - Format tanggal: due_date = "YYYY-MM-DD", remind_at = "YYYY-MM-DDTHH:MM:SS+07:00" (RFC3339 dengan timezone Asia/Jakarta)
 - Jika user sebut tanggal tanpa jam, default jam 07:00 WIB
 - Jika user menyebut jam/waktu, SELALU set reminder=true dan remind_at dengan waktu tersebut
@@ -45,7 +46,12 @@ RULES:
 - Nominal uang: "35rb" = 35000, "1.5jt" = 1500000, "1juta" = 1000000
 - "minggu depan" = 7 hari dari sekarang
 - "bulan depan" = 1 bulan dari sekarang, gunakan hari terakhir bulan tersebut untuk due_date jika tidak spesifik
-- Jika tidak bisa parsing, return: {"intent": "unknown", "raw": "<pesan asli>"}
+- Jika tidak bisa parsing, return: [{"intent": "unknown", "raw": "<pesan asli>"}]
+
+CONTOH BULK:
+- "tambah todo beli susu, beli roti, dan beli kopi" → 3 elemen add_todo
+- "hapus todo beli susu dan selesaikan todo beli roti" → 1 delete_todo + 1 complete_todo
+- "edit todo beli susu jadi beli madu" → 1 elemen edit_todo dengan search="beli susu", title="beli madu"
 
 INTENTS:
 - add_todo: {title, reminder?, remind_at?, recurring?, due_date?}
@@ -63,6 +69,7 @@ INTENTS:
 - show_project: {project}
 - delete_project: {project}
 - delete_goal: {project, search}
+- daily_briefing: {} (user minta rangkuman harian, daily briefing, "apa yang harus dikerjakan hari ini", "briefing", "rangkuman")
 - help: {}
 - unknown: {raw}`,
 		now.Format("2006-01-02 (Monday)"),
@@ -71,23 +78,23 @@ INTENTS:
 		dayAfterTomorrow.Format("2006-01-02"),
 	)
 
-	intent, err := s.callAPI(ctx, systemPrompt, userMessage)
+	intents, err := s.callAPI(ctx, systemPrompt, userMessage)
 	if err != nil {
 		// Retry once
 		slog.Warn("NLP first attempt failed, retrying", "error", err)
-		intent, err = s.callAPI(ctx, systemPrompt, userMessage)
+		intents, err = s.callAPI(ctx, systemPrompt, userMessage)
 		if err != nil {
 			return nil, fmt.Errorf("nlp parse failed: %w", err)
 		}
 	}
 
-	return intent, nil
+	return intents, nil
 }
 
-func (s *Service) callAPI(ctx context.Context, systemPrompt, userMessage string) (*ParsedIntent, error) {
+func (s *Service) callAPI(ctx context.Context, systemPrompt, userMessage string) ([]ParsedIntent, error) {
 	message, err := s.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model: "claude-haiku-4-5-20251001",
-		MaxTokens: 256,
+		Model:     "claude-haiku-4-5-20251001",
+		MaxTokens: 512,
 		System: []anthropic.TextBlockParam{
 			{Text: systemPrompt},
 		},
@@ -123,10 +130,10 @@ func (s *Service) callAPI(ctx context.Context, systemPrompt, userMessage string)
 	text = strings.TrimSuffix(text, "```")
 	text = strings.TrimSpace(text)
 
-	var intent ParsedIntent
-	if err := json.Unmarshal([]byte(text), &intent); err != nil {
+	var intents []ParsedIntent
+	if err := json.Unmarshal([]byte(text), &intents); err != nil {
 		return nil, fmt.Errorf("parse json response: %w (raw: %s)", err, text)
 	}
 
-	return &intent, nil
+	return intents, nil
 }

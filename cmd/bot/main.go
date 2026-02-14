@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -75,13 +76,38 @@ func main() {
 	projectSvc := project.NewService(projectRepo, reminderRepo, loc)
 
 	// Register bot handlers
-	handler := bot.NewHandler(nlpSvc, todoSvc, expenseSvc, projectSvc, loc)
+	handler := bot.NewHandler(nlpSvc, todoSvc, expenseSvc, projectSvc, reminderRepo, loc)
 	handler.Register(b)
 
 	// Start reminder scheduler
 	schedulerInterval := time.Duration(cfg.SchedulerIntervalSec) * time.Second
 	scheduler := reminder.NewScheduler(reminderRepo, b, schedulerInterval, loc)
 	go scheduler.Start()
+
+	// Start daily briefing scheduler (sends daily briefing at 07:30 WIB)
+	dailyScheduler := bot.NewDailyScheduler(b, todoRepo, todoSvc, reminderRepo, loc)
+	go dailyScheduler.Start()
+
+	// Start todo cleanup scheduler (runs every hour, soft-deletes completed todos older than 1 day)
+	cleanupStopCh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		slog.Info("todo cleanup scheduler started")
+		for {
+			select {
+			case <-ticker.C:
+				if err := todoSvc.CleanupCompletedTodos(context.Background()); err != nil {
+					slog.Error("cleanup completed todos failed", "error", err)
+				} else {
+					slog.Info("todo cleanup completed")
+				}
+			case <-cleanupStopCh:
+				slog.Info("todo cleanup scheduler stopped")
+				return
+			}
+		}
+	}()
 
 	// Graceful shutdown
 	go func() {
@@ -91,6 +117,8 @@ func main() {
 		slog.Info("received shutdown signal", "signal", sig)
 
 		scheduler.Stop()
+		dailyScheduler.Stop()
+		close(cleanupStopCh)
 		b.Stop()
 		database.Close()
 		slog.Info("shutdown complete")

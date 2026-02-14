@@ -3,30 +3,34 @@ package bot
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/zhafrantharif/personal-assistant-bot/internal/module/expense"
 	"github.com/zhafrantharif/personal-assistant-bot/internal/module/project"
 	"github.com/zhafrantharif/personal-assistant-bot/internal/module/todo"
 	"github.com/zhafrantharif/personal-assistant-bot/internal/nlp"
+	"github.com/zhafrantharif/personal-assistant-bot/internal/reminder"
 	tele "gopkg.in/telebot.v4"
 )
 
 type Handler struct {
-	nlpSvc     *nlp.Service
-	todoSvc    *todo.Service
-	expenseSvc *expense.Service
-	projectSvc *project.Service
-	timezone   *time.Location
+	nlpSvc       *nlp.Service
+	todoSvc      *todo.Service
+	expenseSvc   *expense.Service
+	projectSvc   *project.Service
+	reminderRepo *reminder.Repository
+	timezone     *time.Location
 }
 
-func NewHandler(nlpSvc *nlp.Service, todoSvc *todo.Service, expenseSvc *expense.Service, projectSvc *project.Service, timezone *time.Location) *Handler {
+func NewHandler(nlpSvc *nlp.Service, todoSvc *todo.Service, expenseSvc *expense.Service, projectSvc *project.Service, reminderRepo *reminder.Repository, timezone *time.Location) *Handler {
 	return &Handler{
-		nlpSvc:     nlpSvc,
-		todoSvc:    todoSvc,
-		expenseSvc: expenseSvc,
-		projectSvc: projectSvc,
-		timezone:   timezone,
+		nlpSvc:       nlpSvc,
+		todoSvc:      todoSvc,
+		expenseSvc:   expenseSvc,
+		projectSvc:   projectSvc,
+		reminderRepo: reminderRepo,
+		timezone:     timezone,
 	}
 }
 
@@ -35,6 +39,7 @@ func (h *Handler) Register(b *tele.Bot) {
 	b.Handle("/help", h.handleHelp)
 	b.Handle("/start", h.handleHelp)
 	b.Handle("/todos", h.handleTodos)
+	b.Handle("/daily", h.handleDaily)
 	b.Handle("/expenses", h.handleExpenses)
 	b.Handle("/projects", h.handleProjects)
 }
@@ -46,21 +51,26 @@ func (h *Handler) handleText(c tele.Context) error {
 
 	slog.Info("received message", "user_id", userID, "text", text)
 
-	intent, err := h.nlpSvc.Parse(ctx, text)
+	intents, err := h.nlpSvc.Parse(ctx, text)
 	if err != nil {
 		slog.Error("nlp parse failed", "error", err)
 		return c.Send("⚠️ Maaf, terjadi kesalahan. Coba lagi nanti.")
 	}
 
-	slog.Info("parsed intent", "intent", intent.Intent, "user_id", userID)
+	slog.Info("parsed intents", "count", len(intents), "user_id", userID)
 
-	resp, err := h.route(ctx, userID, intent)
-	if err != nil {
-		slog.Error("handler error", "intent", intent.Intent, "error", err)
-		return c.Send("⚠️ Maaf, terjadi kesalahan saat memproses permintaan kamu.")
+	var responses []string
+	for _, intent := range intents {
+		resp, err := h.route(ctx, userID, &intent)
+		if err != nil {
+			slog.Error("handler error", "intent", intent.Intent, "error", err)
+			responses = append(responses, "⚠️ Maaf, terjadi kesalahan saat memproses permintaan kamu.")
+			continue
+		}
+		responses = append(responses, resp)
 	}
 
-	return c.Send(resp)
+	return c.Send(strings.Join(responses, "\n\n"))
 }
 
 func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedIntent) (string, error) {
@@ -80,10 +90,22 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 		if err != nil {
 			return "", err
 		}
-		return FormatTodoList(todos, filter, h.timezone), nil
+		reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+		if err != nil {
+			slog.Error("list reminders for todo list failed", "error", err)
+			reminders = nil
+		}
+		return FormatTodoList(todos, filter, h.timezone, reminders), nil
+
+	case "daily_briefing":
+		return h.dailyBriefing(ctx, userID)
 
 	case "complete_todo":
 		return h.todoSvc.Complete(ctx, userID, intent.Search)
+
+	case "edit_todo":
+		dueDate, _ := intent.ParseDueDate(h.timezone)
+		return h.todoSvc.Edit(ctx, userID, intent.Search, intent.Title, dueDate)
 
 	case "delete_todo":
 		return h.todoSvc.Delete(ctx, userID, intent.Search)
@@ -148,12 +170,40 @@ func (h *Handler) handleHelp(c tele.Context) error {
 func (h *Handler) handleTodos(c tele.Context) error {
 	ctx := context.Background()
 	userID := c.Sender().ID
-	todos, err := h.todoSvc.List(ctx, userID, "pending")
+	todos, err := h.todoSvc.List(ctx, userID, "all")
 	if err != nil {
 		slog.Error("list todos failed", "error", err)
 		return c.Send("⚠️ Gagal mengambil daftar todo.")
 	}
-	return c.Send(FormatTodoList(todos, "pending", h.timezone))
+	reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		slog.Error("list reminders failed", "error", err)
+		reminders = nil
+	}
+	return c.Send(FormatTodoList(todos, "all", h.timezone, reminders))
+}
+
+func (h *Handler) handleDaily(c tele.Context) error {
+	ctx := context.Background()
+	userID := c.Sender().ID
+	resp, err := h.dailyBriefing(ctx, userID)
+	if err != nil {
+		slog.Error("daily briefing failed", "error", err)
+		return c.Send("⚠️ Gagal membuat daily briefing.")
+	}
+	return c.Send(resp)
+}
+
+func (h *Handler) dailyBriefing(ctx context.Context, userID int64) (string, error) {
+	todos, err := h.todoSvc.List(ctx, userID, "pending")
+	if err != nil {
+		return "", err
+	}
+	reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return FormatDailyBriefing(todos, h.timezone, reminders), nil
 }
 
 func (h *Handler) handleExpenses(c tele.Context) error {
@@ -183,11 +233,14 @@ func helpText() string {
 
 📋 Todo & Reminder:
 • "tambah todo beli susu"
+• "tambah todo beli susu, beli roti, beli kopi" (bulk)
+• "edit todo beli susu jadi beli madu"
 • "ingetin bayar listrik besok"
 • "ingetin bayar wifi tiap tanggal 5"
 • "list todo"
 • "selesaiin todo beli susu"
 • "hapus todo beli susu"
+• "hapus todo A, selesaikan todo B" (bulk)
 
 💰 Pengeluaran:
 • "catat makan siang 35rb"
@@ -204,7 +257,8 @@ func helpText() string {
 • "hapus project Laundry App"
 
 ⌨️ Shortcut Commands:
-/todos — List todo pending
+/todos — List semua todo
+/daily — Daily briefing + reminder bulanan
 /expenses — Pengeluaran bulan ini
 /projects — List semua project
 /help — Tampilkan bantuan ini`

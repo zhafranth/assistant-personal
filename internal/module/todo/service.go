@@ -9,16 +9,16 @@ import (
 )
 
 type Service struct {
-	repo        *Repository
+	repo         *Repository
 	reminderRepo *reminder.Repository
-	timezone    *time.Location
+	timezone     *time.Location
 }
 
 func NewService(repo *Repository, reminderRepo *reminder.Repository, timezone *time.Location) *Service {
 	return &Service{
-		repo:        repo,
+		repo:         repo,
 		reminderRepo: reminderRepo,
-		timezone:    timezone,
+		timezone:     timezone,
 	}
 }
 
@@ -71,6 +71,37 @@ func (s *Service) Complete(ctx context.Context, userID int64, search string) (st
 	return fmt.Sprintf("✅ Todo selesai: \"%s\"", todo.Title), nil
 }
 
+func (s *Service) Edit(ctx context.Context, userID int64, search string, newTitle string, newDueDate *time.Time) (string, error) {
+	todo, err := s.repo.FindBySearch(ctx, userID, search)
+	if err != nil {
+		return "", err
+	}
+	if todo == nil {
+		return fmt.Sprintf("❌ Todo \"%s\" tidak ditemukan.", search), nil
+	}
+
+	title := todo.Title
+	if newTitle != "" {
+		title = newTitle
+	}
+
+	dueDate := todo.DueDate
+	if newDueDate != nil {
+		dueDate = newDueDate
+	}
+
+	if err := s.repo.Update(ctx, todo.ID, title, dueDate); err != nil {
+		return "", err
+	}
+
+	resp := fmt.Sprintf("✏️ Todo diupdate: \"%s\"", title)
+	if dueDate != nil {
+		resp += fmt.Sprintf("\n📅 Deadline: %s", dueDate.In(s.timezone).Format("2 Jan 2006"))
+	}
+
+	return resp, nil
+}
+
 func (s *Service) Delete(ctx context.Context, userID int64, search string) (string, error) {
 	todo, err := s.repo.FindBySearch(ctx, userID, search)
 	if err != nil {
@@ -85,4 +116,9 @@ func (s *Service) Delete(ctx context.Context, userID int64, search string) (stri
 	}
 
 	return fmt.Sprintf("🗑️ Todo dihapus: \"%s\"", todo.Title), nil
+}
+
+func (s *Service) CleanupCompletedTodos(ctx context.Context) error {
+	before := time.Now().Add(-24 * time.Hour)
+	return s.repo.SoftDeleteCompletedOlderThan(ctx, before)
 }
