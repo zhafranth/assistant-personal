@@ -105,7 +105,11 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 
 	case "edit_todo":
 		dueDate, _ := intent.ParseDueDate(h.timezone)
-		return h.todoSvc.Edit(ctx, userID, intent.Search, intent.Title, dueDate)
+		remindAt, _ := intent.ParseRemindAt(h.timezone)
+		return h.todoSvc.Edit(ctx, userID, intent.Search, intent.Title, dueDate, remindAt)
+
+	case "clear_todo":
+		return h.todoSvc.CompleteAll(ctx, userID)
 
 	case "delete_todo":
 		return h.todoSvc.Delete(ctx, userID, intent.Search)

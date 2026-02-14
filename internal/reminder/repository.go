@@ -122,6 +122,29 @@ func (r *Repository) ListActiveByUser(ctx context.Context, userID int64) ([]Todo
 	return reminders, rows.Err()
 }
 
+func (r *Repository) UpsertByTodoID(ctx context.Context, todoID int, remindAt time.Time) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE reminders SET remind_at = $1, is_active = TRUE, last_fired_at = NULL
+		 WHERE todo_id = $2 AND is_active = TRUE`,
+		remindAt, todoID,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert reminder by todo_id: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// No active reminder exists, create a new one
+		_, err = r.db.ExecContext(ctx,
+			`INSERT INTO reminders (todo_id, remind_at, is_recurring, recurrence_rule) VALUES ($1, $2, FALSE, NULL)`,
+			todoID, remindAt,
+		)
+		if err != nil {
+			return fmt.Errorf("create reminder on upsert: %w", err)
+		}
+	}
+	return nil
+}
+
 func (r *Repository) Deactivate(ctx context.Context, id int) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE reminders SET is_active = FALSE, last_fired_at = NOW() WHERE id = $1`,

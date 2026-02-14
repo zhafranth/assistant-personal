@@ -138,6 +138,19 @@ func (r *Repository) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
+func (r *Repository) CompleteAll(ctx context.Context, userID int64) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE todos SET is_completed = TRUE, completed_at = NOW(), updated_at = NOW()
+		 WHERE user_id = $1 AND project_id IS NULL AND is_completed = FALSE AND deleted_at IS NULL`,
+		userID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("complete all todos: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (r *Repository) SoftDeleteCompletedOlderThan(ctx context.Context, before time.Time) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE todos SET deleted_at = NOW(), updated_at = NOW()

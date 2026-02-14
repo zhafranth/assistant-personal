@@ -59,6 +59,7 @@ INTENTS:
 - list_todo: {filter: "all"|"today"|"pending"}
 - delete_todo: {search}
 - edit_todo: {search, title?, due_date?, remind_at?}
+- clear_todo: {} (user ingin mengosongkan/menyelesaikan semua todo, "kosongkan todo", "selesaikan semua todo", "clear semua todo")
 - add_expense: {description, amount}
 - list_expense: {filter: "today"|"this_week"|"this_month"|"all"}
 - delete_expense: {search}
