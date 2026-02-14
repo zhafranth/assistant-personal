@@ -63,7 +63,8 @@ INTENTS:
 - delete_todo: {search}
 - edit_todo: {search, title?, due_date?, remind_at?}
 - clear_todo: {} (HANYA jika user ingin menghapus/mengosongkan semua todo sekaligus tanpa menyebut nama spesifik: "kosongkan todo", "hapus semua todo", "clear todo list". JANGAN gunakan ini jika user menyebut nama todo tertentu — gunakan complete_todo atau delete_todo per item)
-- add_expense: {description, amount}
+- add_expense: {description, amount, is_paid?} (default is_paid=true. Set is_paid=false jika user bilang "hutang", "belum bayar", "belum lunas", "cicilan". Contoh: "catat hutang sewa kos 1.5jt" → is_paid=false)
+- pay_expense: {search} (user mau tandai pengeluaran sebagai lunas, contoh: "lunasi sewa kos", "bayar hutang laundry")
 - list_expense: {filter: "today"|"this_week"|"this_month"|"all"}
 - delete_expense: {search}
 - add_project: {name, due_date?, description?}

@@ -85,7 +85,7 @@ func main() {
 	go scheduler.Start()
 
 	// Start daily briefing scheduler (sends daily briefing at 07:30 WIB)
-	dailyScheduler := bot.NewDailyScheduler(b, todoRepo, todoSvc, reminderRepo, loc)
+	dailyScheduler := bot.NewDailyScheduler(b, todoRepo, todoSvc, expenseSvc, reminderRepo, loc)
 	go dailyScheduler.Start()
 
 	// Start todo cleanup scheduler (runs every hour, soft-deletes completed todos older than 1 day)

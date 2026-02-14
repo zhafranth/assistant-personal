@@ -116,7 +116,14 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 
 	// === Expense ===
 	case "add_expense":
-		return h.expenseSvc.Add(ctx, userID, intent.Description, intent.Amount)
+		isPaid := true
+		if intent.IsPaid != nil {
+			isPaid = *intent.IsPaid
+		}
+		return h.expenseSvc.Add(ctx, userID, intent.Description, intent.Amount, isPaid)
+
+	case "pay_expense":
+		return h.expenseSvc.PayExpense(ctx, userID, intent.Search)
 
 	case "list_expense":
 		filter := intent.Filter
@@ -248,9 +255,11 @@ func helpText() string {
 
 💰 Pengeluaran:
 • "catat makan siang 35rb"
-• "bayar parkir 5000"
+• "catat hutang sewa kos 1.5jt" (belum lunas)
+• "lunasi sewa kos"
 • "pengeluaran hari ini"
 • "pengeluaran bulan ini"
+• "semua pengeluaran"
 • "hapus pengeluaran parkir"
 
 📁 Project:

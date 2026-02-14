@@ -18,6 +18,7 @@ type ParsedIntent struct {
 	RemindAt    string  `json:"remind_at,omitempty"`
 	Recurring   string  `json:"recurring,omitempty"`
 	DueDate     string  `json:"due_date,omitempty"`
+	IsPaid      *bool   `json:"is_paid,omitempty"`
 	Raw         string  `json:"raw,omitempty"`
 }
 
