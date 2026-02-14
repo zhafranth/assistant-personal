@@ -34,6 +34,11 @@ type Goal struct {
 	CreatedAt   time.Time
 }
 
+type GoalWithProject struct {
+	Goal
+	ProjectName string
+}
+
 type Repository struct {
 	db *sql.DB
 }
@@ -60,7 +65,7 @@ func (r *Repository) List(ctx context.Context, userID int64) ([]ProjectWithProgr
 		        COUNT(t.id) AS total_goals,
 		        COUNT(CASE WHEN t.is_completed THEN 1 END) AS completed_goals
 		 FROM projects p
-		 LEFT JOIN todos t ON t.project_id = p.id
+		 LEFT JOIN todos t ON t.project_id = p.id AND t.deleted_at IS NULL
 		 WHERE p.user_id = $1 AND p.is_active = TRUE
 		 GROUP BY p.id
 		 ORDER BY p.created_at DESC`,
@@ -115,7 +120,7 @@ func (r *Repository) Delete(ctx context.Context, id int) error {
 func (r *Repository) GetGoals(ctx context.Context, projectID int) ([]Goal, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, project_id, title, is_completed, completed_at, due_date, created_at
-		 FROM todos WHERE project_id = $1
+		 FROM todos WHERE project_id = $1 AND deleted_at IS NULL
 		 ORDER BY is_completed ASC, created_at ASC`,
 		projectID,
 	)
@@ -145,6 +150,32 @@ func (r *Repository) AddGoal(ctx context.Context, userID int64, projectID int, t
 		return 0, fmt.Errorf("add goal: %w", err)
 	}
 	return id, nil
+}
+
+func (r *Repository) FindGoalAcrossProjects(ctx context.Context, userID int64, search string) ([]GoalWithProject, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT t.id, t.project_id, t.title, t.is_completed, t.completed_at, t.due_date, t.created_at, p.name
+		 FROM todos t
+		 JOIN projects p ON p.id = t.project_id
+		 WHERE p.user_id = $1 AND t.title ILIKE '%' || $2 || '%'
+		   AND t.deleted_at IS NULL AND p.is_active = TRUE
+		 ORDER BY p.name ASC, t.created_at ASC`,
+		userID, search,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find goal across projects: %w", err)
+	}
+	defer rows.Close()
+
+	var goals []GoalWithProject
+	for rows.Next() {
+		var g GoalWithProject
+		if err := rows.Scan(&g.ID, &g.ProjectID, &g.Title, &g.IsCompleted, &g.CompletedAt, &g.DueDate, &g.CreatedAt, &g.ProjectName); err != nil {
+			return nil, fmt.Errorf("scan goal with project: %w", err)
+		}
+		goals = append(goals, g)
+	}
+	return goals, rows.Err()
 }
 
 func (r *Repository) FindGoalBySearch(ctx context.Context, projectID int, search string) (*Goal, error) {

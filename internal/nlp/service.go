@@ -55,6 +55,13 @@ CONTOH BULK:
 - "edit todo beli susu jadi beli madu" → 1 elemen edit_todo dengan search="beli susu", title="beli madu"
 - "kosongkan todo" → 1 elemen clear_todo (tanpa nama spesifik = hapus semua)
 - "buat done semua todo" → 1 elemen clear_todo HANYA jika tidak ada nama spesifik yang disebutkan
+- "lihat goals Laundry App" → show_project dengan project="Laundry App"
+- "progress Laundry App" → show_project dengan project="Laundry App"
+- "list project" → list_project (tanpa project field)
+- "tambah goal di Laundry App: wireframe, database, deploy" → 3 elemen add_goal dengan project="Laundry App"
+- "hapus goal wireframe dan database dari Laundry App" → 2 elemen delete_goal dengan project="Laundry App"
+- "done goal wireframe" → complete_goal dengan project="" (kosong, jika user tidak sebut project)
+- "selesaikan goal wireframe di Laundry App" → complete_goal dengan project="Laundry App", search="wireframe"
 - "catat makan siang 35rb, bensin 50rb, parkir 5rb" → 3 elemen add_expense
 - "catat makan siang 35rb dan bensin 50rb" → 2 elemen add_expense
 - "hapus pengeluaran parkir dan bensin" → 2 elemen delete_expense (search="parkir", search="bensin")
@@ -79,12 +86,12 @@ INTENTS:
 - edit_expense: {search, amount?, date?, new_title?, new_is_paid?} (edit judul atau status pengeluaran. "ganti nama bensin jadi bensin motor" → search="bensin", new_title="bensin motor". "tandai beli kecap 20rb sudah lunas" → search="beli kecap", amount=20000, new_is_paid=true. "ubah beli kecap jadi belum lunas" → search="beli kecap", new_is_paid=false)
 - clear_expense: {month, year?} (hapus semua pengeluaran di bulan tertentu. month=1-12. "kosongkan februari 2026" → month=2, year=2026. "hapus semua pengeluaran februari" → month=2, year tidak diisi)
 - add_project: {name, due_date?, description?}
-- add_goal: {project, title, due_date?, reminder?, remind_at?, recurring?}
-- complete_goal: {project, search}
-- list_project: {}
-- show_project: {project}
+- add_goal: {project, title, due_date?, reminder?, remind_at?, recurring?} (project WAJIB diisi. Jika bulk: tiap goal = 1 elemen dengan project yang sama)
+- complete_goal: {project?, search} (project boleh kosong jika user tidak menyebutkan project)
+- list_project: {} (tampilkan semua project, "list project", "project apa saja", "daftar project")
+- show_project: {project} (tampilkan detail + goals satu project. "lihat project X", "detail project X", "goals X", "progress X", "tampilkan X", "apa saja goals X" → project="X")
 - delete_project: {project}
-- delete_goal: {project, search}
+- delete_goal: {project?, search} (project boleh kosong jika user tidak menyebutkan project)
 - daily_briefing: {} (user minta rangkuman harian, daily briefing, "apa yang harus dikerjakan hari ini", "briefing", "rangkuman")
 - help: {}
 - unknown: {raw}`,

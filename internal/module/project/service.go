@@ -71,6 +71,7 @@ func (s *Service) Show(ctx context.Context, userID int64, projectName string) (s
 		return "", err
 	}
 
+	total := len(goals)
 	completed := 0
 	for _, g := range goals {
 		if g.IsCompleted {
@@ -78,25 +79,53 @@ func (s *Service) Show(ctx context.Context, userID int64, projectName string) (s
 		}
 	}
 
-	resp := fmt.Sprintf("📁 Project: %s\n", proj.Name)
+	// Build progress bar (10 blocks)
+	progressBar := ""
+	if total > 0 {
+		filled := (completed * 10) / total
+		for i := 0; i < 10; i++ {
+			if i < filled {
+				progressBar += "█"
+			} else {
+				progressBar += "░"
+			}
+		}
+		pct := (completed * 100) / total
+		progressBar = fmt.Sprintf("[%s] %d%%", progressBar, pct)
+	} else {
+		progressBar = "[░░░░░░░░░░] 0%"
+	}
+
+	resp := fmt.Sprintf("📁 %s\n", proj.Name)
+	if proj.Description != nil {
+		resp += fmt.Sprintf("📝 %s\n", *proj.Description)
+	}
 	if proj.DueDate != nil {
 		resp += fmt.Sprintf("📅 Deadline: %s\n", proj.DueDate.In(s.timezone).Format("2 Jan 2006"))
 	}
-	resp += fmt.Sprintf("📊 Progress: %d/%d goals ✓\n", completed, len(goals))
+	resp += fmt.Sprintf("📊 Progress: %d/%d goals %s\n", completed, total, progressBar)
 
-	if len(goals) > 0 {
-		resp += "\nGoals:\n"
-		for i, g := range goals {
-			check := "☐"
-			suffix := ""
-			if g.IsCompleted {
-				check = "☑"
-				suffix = " ✓"
+	if total == 0 {
+		resp += "\n_Belum ada goals. Tambahkan dengan:_\n\"tambah goal di " + proj.Name + ": nama goal\""
+		return resp, nil
+	}
+
+	now := time.Now().In(s.timezone)
+	resp += "\nGoals:\n"
+	for i, g := range goals {
+		if g.IsCompleted {
+			resp += fmt.Sprintf("%d. ✅ %s\n", i+1, g.Title)
+		} else {
+			line := fmt.Sprintf("%d. ☐ %s", i+1, g.Title)
+			if g.DueDate != nil {
+				d := g.DueDate.In(s.timezone)
+				dateStr := d.Format("2 Jan 2006")
+				if d.Before(now) {
+					dateStr += " ⚠️"
+				}
+				line += fmt.Sprintf(" — %s", dateStr)
 			}
-			if g.DueDate != nil && !g.IsCompleted {
-				suffix += fmt.Sprintf(" — deadline %s", g.DueDate.In(s.timezone).Format("2 Jan 2006"))
-			}
-			resp += fmt.Sprintf("%d. %s %s%s\n", i+1, check, g.Title, suffix)
+			resp += line + "\n"
 		}
 	}
 
@@ -138,6 +167,11 @@ func (s *Service) AddGoal(ctx context.Context, userID int64, projectName, title 
 }
 
 func (s *Service) CompleteGoal(ctx context.Context, userID int64, projectName, search string) (string, error) {
+	// If project not specified, search across all projects
+	if projectName == "" {
+		return s.completeGoalAcrossProjects(ctx, userID, search)
+	}
+
 	proj, err := s.repo.FindByName(ctx, userID, projectName)
 	if err != nil {
 		return "", err
@@ -164,6 +198,28 @@ func (s *Service) CompleteGoal(ctx context.Context, userID int64, projectName, s
 	return fmt.Sprintf("✅ Goal selesai di %s: \"%s\"", proj.Name, goal.Title), nil
 }
 
+func (s *Service) completeGoalAcrossProjects(ctx context.Context, userID int64, search string) (string, error) {
+	matches, err := s.repo.FindGoalAcrossProjects(ctx, userID, search)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return fmt.Sprintf("❌ Goal \"%s\" tidak ditemukan di project manapun.", search), nil
+	}
+	// Check if all matches are in the same project
+	if allSameProject(matches) {
+		g := matches[0]
+		if g.IsCompleted {
+			return fmt.Sprintf("ℹ️ Goal \"%s\" sudah selesai sebelumnya.", g.Title), nil
+		}
+		if err := s.repo.CompleteGoal(ctx, g.ID); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("✅ Goal selesai di %s: \"%s\"", g.ProjectName, g.Title), nil
+	}
+	return formatGoalDisambiguation("selesaikan", search, matches), nil
+}
+
 func (s *Service) Delete(ctx context.Context, userID int64, projectName string) (string, error) {
 	proj, err := s.repo.FindByName(ctx, userID, projectName)
 	if err != nil {
@@ -181,6 +237,11 @@ func (s *Service) Delete(ctx context.Context, userID int64, projectName string) 
 }
 
 func (s *Service) DeleteGoal(ctx context.Context, userID int64, projectName, search string) (string, error) {
+	// If project not specified, search across all projects
+	if projectName == "" {
+		return s.deleteGoalAcrossProjects(ctx, userID, search)
+	}
+
 	proj, err := s.repo.FindByName(ctx, userID, projectName)
 	if err != nil {
 		return "", err
@@ -202,4 +263,57 @@ func (s *Service) DeleteGoal(ctx context.Context, userID int64, projectName, sea
 	}
 
 	return fmt.Sprintf("🗑️ Goal dihapus dari %s: \"%s\"", proj.Name, goal.Title), nil
+}
+
+func (s *Service) deleteGoalAcrossProjects(ctx context.Context, userID int64, search string) (string, error) {
+	matches, err := s.repo.FindGoalAcrossProjects(ctx, userID, search)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return fmt.Sprintf("❌ Goal \"%s\" tidak ditemukan di project manapun.", search), nil
+	}
+	if allSameProject(matches) {
+		g := matches[0]
+		if err := s.repo.DeleteGoal(ctx, g.ID); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("🗑️ Goal dihapus dari %s: \"%s\"", g.ProjectName, g.Title), nil
+	}
+	return formatGoalDisambiguation("hapus", search, matches), nil
+}
+
+// allSameProject returns true if all GoalWithProject entries belong to the same project.
+func allSameProject(goals []GoalWithProject) bool {
+	if len(goals) == 0 {
+		return true
+	}
+	first := goals[0].ProjectID
+	for _, g := range goals[1:] {
+		if g.ProjectID != first {
+			return false
+		}
+	}
+	return true
+}
+
+// formatGoalDisambiguation builds a message asking the user to specify the project.
+func formatGoalDisambiguation(action, search string, matches []GoalWithProject) string {
+	// Collect unique project names
+	seen := make(map[string]bool)
+	var projectNames []string
+	for _, g := range matches {
+		if !seen[g.ProjectName] {
+			seen[g.ProjectName] = true
+			projectNames = append(projectNames, g.ProjectName)
+		}
+	}
+
+	msg := fmt.Sprintf("🔍 Goal \"%s\" ditemukan di %d project:\n", search, len(projectNames))
+	for i, name := range projectNames {
+		msg += fmt.Sprintf("%d. %s\n", i+1, name)
+	}
+	msg += fmt.Sprintf("\nSebutkan projectnya, contoh:\n\"")
+	msg += fmt.Sprintf("%s goal %s di %s\"", action, search, projectNames[0])
+	return msg
 }

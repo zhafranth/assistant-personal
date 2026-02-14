@@ -153,7 +153,7 @@ func (r *Repository) DeleteAll(ctx context.Context, userID int64) (int64, error)
 func (r *Repository) SoftDeleteCompletedOlderThan(ctx context.Context, before time.Time) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE todos SET deleted_at = NOW(), updated_at = NOW()
-		 WHERE is_completed = TRUE AND completed_at <= $1 AND deleted_at IS NULL`,
+		 WHERE is_completed = TRUE AND completed_at <= $1 AND deleted_at IS NULL AND project_id IS NULL`,
 		before,
 	)
 	if err != nil {
