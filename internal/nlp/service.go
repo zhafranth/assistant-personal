@@ -51,7 +51,10 @@ RULES:
 CONTOH BULK:
 - "tambah todo beli susu, beli roti, dan beli kopi" → 3 elemen add_todo
 - "hapus todo beli susu dan selesaikan todo beli roti" → 1 delete_todo + 1 complete_todo
+- "done makan mie dan cuci piring" → 2 elemen complete_todo (search="makan mie", search="cuci piring")
 - "edit todo beli susu jadi beli madu" → 1 elemen edit_todo dengan search="beli susu", title="beli madu"
+- "kosongkan todo" → 1 elemen clear_todo (tanpa nama spesifik = hapus semua)
+- "buat done semua todo" → 1 elemen clear_todo HANYA jika tidak ada nama spesifik yang disebutkan
 
 INTENTS:
 - add_todo: {title, reminder?, remind_at?, recurring?, due_date?}
@@ -59,7 +62,7 @@ INTENTS:
 - list_todo: {filter: "all"|"today"|"pending"}
 - delete_todo: {search}
 - edit_todo: {search, title?, due_date?, remind_at?}
-- clear_todo: {} (user ingin mengosongkan/menyelesaikan semua todo, "kosongkan todo", "selesaikan semua todo", "clear semua todo")
+- clear_todo: {} (HANYA jika user ingin menghapus/mengosongkan semua todo sekaligus tanpa menyebut nama spesifik: "kosongkan todo", "hapus semua todo", "clear todo list". JANGAN gunakan ini jika user menyebut nama todo tertentu — gunakan complete_todo atau delete_todo per item)
 - add_expense: {description, amount}
 - list_expense: {filter: "today"|"this_week"|"this_month"|"all"}
 - delete_expense: {search}

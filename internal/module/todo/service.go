@@ -125,15 +125,15 @@ func (s *Service) Delete(ctx context.Context, userID int64, search string) (stri
 	return fmt.Sprintf("🗑️ Todo dihapus: \"%s\"", todo.Title), nil
 }
 
-func (s *Service) CompleteAll(ctx context.Context, userID int64) (string, error) {
-	n, err := s.repo.CompleteAll(ctx, userID)
+func (s *Service) ClearAll(ctx context.Context, userID int64) (string, error) {
+	n, err := s.repo.DeleteAll(ctx, userID)
 	if err != nil {
 		return "", err
 	}
 	if n == 0 {
-		return "ℹ️ Tidak ada todo pending yang perlu dikosongkan.", nil
+		return "ℹ️ Tidak ada todo yang perlu dihapus.", nil
 	}
-	return fmt.Sprintf("✅ %d todo ditandai selesai semua.", n), nil
+	return fmt.Sprintf("🗑️ %d todo dihapus dari daftar.", n), nil
 }
 
 func (s *Service) CleanupCompletedTodos(ctx context.Context) error {

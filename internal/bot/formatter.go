@@ -131,12 +131,15 @@ func FormatTodoList(todos []todo.Todo, filter string, loc *time.Location, remind
 			details = append(details, "📅 "+dateStr)
 		}
 
-		// Recurring indicator
-		if rm, ok := reminderMap[t.ID]; ok && rm.IsRecurring {
-			label := recurringLabel(rm.RecurrenceRule)
-			if label != "" {
-				details = append(details, "🔁 "+label)
+		// Reminder time + recurring indicator
+		if rm, ok := reminderMap[t.ID]; ok {
+			rmStr := "⏰ " + formatTime(rm.RemindAt.In(loc))
+			if rm.IsRecurring {
+				if label := recurringLabel(rm.RecurrenceRule); label != "" {
+					rmStr += " 🔁 " + label
+				}
 			}
+			details = append(details, rmStr)
 		}
 
 		if len(details) > 0 {
@@ -226,11 +229,13 @@ func FormatDailyBriefing(todos []todo.Todo, loc *time.Location, reminders []remi
 				line += " — " + dateStr
 			}
 
-			// Recurring indicator
-			if rm, ok := reminderMap[t.ID]; ok && rm.IsRecurring {
-				label := recurringLabel(rm.RecurrenceRule)
-				if label != "" {
-					line += " 🔁"
+			// Reminder time + recurring indicator
+			if rm, ok := reminderMap[t.ID]; ok {
+				line += " ⏰ " + formatTime(rm.RemindAt.In(loc))
+				if rm.IsRecurring {
+					if label := recurringLabel(rm.RecurrenceRule); label != "" {
+						line += " 🔁"
+					}
 				}
 			}
 
