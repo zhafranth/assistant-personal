@@ -301,6 +301,50 @@ func FormatDailyBriefing(todos []todo.Todo, loc *time.Location, reminders []remi
 	return strings.Join(lines, "\n")
 }
 
+// FormatOverdueNotification formats a single overdue todo follow-up.
+//
+// ⚠️ Masih belum selesai
+//
+// 📌 Bayar listrik
+// 📅 Jatuh tempo: 25 Feb (2 hari lalu)
+//
+// Ketik "done bayar listrik" jika sudah selesai
+func FormatOverdueNotification(t todo.Todo, loc *time.Location) string {
+	now := time.Now().In(loc)
+	d := t.DueDate.In(loc)
+
+	dateStr := formatDateShort(d)
+	agoStr := relativeTimeAgo(now, d)
+
+	return fmt.Sprintf("⚠️ Masih belum selesai\n\n📌 %s\n📅 Jatuh tempo: %s (%s)\n\nKetik \"done %s\" jika sudah selesai",
+		t.Title, dateStr, agoStr, t.Title)
+}
+
+func relativeTimeAgo(now, target time.Time) string {
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	targetDate := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, target.Location())
+	days := int(nowDate.Sub(targetDate).Hours() / 24)
+
+	switch {
+	case days == 1:
+		return "kemarin"
+	case days < 7:
+		return fmt.Sprintf("%d hari lalu", days)
+	case days < 30:
+		weeks := days / 7
+		if weeks == 1 {
+			return "1 minggu lalu"
+		}
+		return fmt.Sprintf("%d minggu lalu", weeks)
+	default:
+		months := days / 30
+		if months == 1 {
+			return "1 bulan lalu"
+		}
+		return fmt.Sprintf("%d bulan lalu", months)
+	}
+}
+
 func filterTodoLabel(filter string) string {
 	switch filter {
 	case "today":

@@ -178,6 +178,24 @@ func (r *Repository) GetByID(ctx context.Context, id int) (*Todo, error) {
 	return &t, nil
 }
 
+func (r *Repository) ListOverdueByUser(ctx context.Context, userID int64, loc *time.Location) ([]Todo, error) {
+	now := time.Now().In(loc)
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, project_id, title, description, is_completed, completed_at, due_date, deleted_at, created_at, updated_at
+		 FROM todos
+		 WHERE user_id = $1 AND project_id IS NULL AND is_completed = FALSE AND deleted_at IS NULL
+		   AND due_date IS NOT NULL AND due_date < $2
+		 ORDER BY due_date ASC`,
+		userID, todayStart,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list overdue todos: %w", err)
+	}
+	defer rows.Close()
+	return scanTodos(rows)
+}
+
 func (r *Repository) ListActiveUserIDs(ctx context.Context) ([]int64, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT DISTINCT user_id FROM todos WHERE deleted_at IS NULL`)

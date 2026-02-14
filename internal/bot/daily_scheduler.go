@@ -11,14 +11,19 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+type scheduledTask struct {
+	hour   int
+	minute int
+	name   string
+	fn     func()
+}
+
 type DailyScheduler struct {
 	bot          *tele.Bot
 	todoRepo     *todo.Repository
 	todoSvc      *todo.Service
 	reminderRepo *reminder.Repository
 	timezone     *time.Location
-	hour         int
-	minute       int
 	stopCh       chan struct{}
 	once         sync.Once
 }
@@ -30,39 +35,64 @@ func NewDailyScheduler(bot *tele.Bot, todoRepo *todo.Repository, todoSvc *todo.S
 		todoSvc:      todoSvc,
 		reminderRepo: reminderRepo,
 		timezone:     timezone,
-		hour:         7,
-		minute:       30,
 		stopCh:       make(chan struct{}),
 	}
 }
 
 func (s *DailyScheduler) Start() {
-	slog.Info("daily briefing scheduler started", "time", "07:30")
+	slog.Info("daily scheduler started", "briefing", "07:30", "overdue", "19:00")
+
+	tasks := []scheduledTask{
+		{hour: 7, minute: 30, name: "daily_briefing", fn: s.sendBriefing},
+		{hour: 19, minute: 0, name: "overdue_followup", fn: s.sendOverdueFollowups},
+	}
+
 	for {
 		now := time.Now().In(s.timezone)
-		next := time.Date(now.Year(), now.Month(), now.Day(), s.hour, s.minute, 0, 0, s.timezone)
-		if !next.After(now) {
-			next = next.AddDate(0, 0, 1)
-		}
+		nextTask, waitDuration := s.findNextTask(now, tasks)
 
-		waitDuration := next.Sub(now)
-		slog.Info("daily briefing next run", "at", next.Format("2006-01-02 15:04"), "in", waitDuration.Round(time.Second))
+		slog.Info("daily scheduler next run",
+			"task", nextTask.name,
+			"at", now.Add(waitDuration).Format("2006-01-02 15:04"),
+			"in", waitDuration.Round(time.Second),
+		)
 
 		select {
 		case <-time.After(waitDuration):
-			s.send()
+			nextTask.fn()
 		case <-s.stopCh:
-			slog.Info("daily briefing scheduler stopped")
+			slog.Info("daily scheduler stopped")
 			return
 		}
 	}
+}
+
+func (s *DailyScheduler) findNextTask(now time.Time, tasks []scheduledTask) (scheduledTask, time.Duration) {
+	var best scheduledTask
+	var bestDuration time.Duration
+	first := true
+
+	for _, t := range tasks {
+		target := time.Date(now.Year(), now.Month(), now.Day(), t.hour, t.minute, 0, 0, s.timezone)
+		if !target.After(now) {
+			target = target.AddDate(0, 0, 1)
+		}
+		d := target.Sub(now)
+		if first || d < bestDuration {
+			best = t
+			bestDuration = d
+			first = false
+		}
+	}
+
+	return best, bestDuration
 }
 
 func (s *DailyScheduler) Stop() {
 	s.once.Do(func() { close(s.stopCh) })
 }
 
-func (s *DailyScheduler) send() {
+func (s *DailyScheduler) sendBriefing() {
 	ctx := context.Background()
 
 	userIDs, err := s.todoRepo.ListActiveUserIDs(ctx)
@@ -92,5 +122,38 @@ func (s *DailyScheduler) send() {
 		}
 
 		slog.Info("daily briefing sent", "user_id", userID)
+	}
+}
+
+func (s *DailyScheduler) sendOverdueFollowups() {
+	ctx := context.Background()
+
+	userIDs, err := s.todoRepo.ListActiveUserIDs(ctx)
+	if err != nil {
+		slog.Error("overdue followup: failed to list users", "error", err)
+		return
+	}
+
+	for _, userID := range userIDs {
+		overdueTodos, err := s.todoRepo.ListOverdueByUser(ctx, userID, s.timezone)
+		if err != nil {
+			slog.Error("overdue followup: failed to list overdue", "user_id", userID, "error", err)
+			continue
+		}
+
+		if len(overdueTodos) == 0 {
+			continue
+		}
+
+		user := &tele.User{ID: userID}
+		for _, t := range overdueTodos {
+			msg := FormatOverdueNotification(t, s.timezone)
+			if _, err := s.bot.Send(user, msg); err != nil {
+				slog.Error("overdue followup: failed to send", "user_id", userID, "todo_id", t.ID, "error", err)
+				continue
+			}
+		}
+
+		slog.Info("overdue followup sent", "user_id", userID, "count", len(overdueTodos))
 	}
 }

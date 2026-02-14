@@ -83,8 +83,95 @@ func (s *Scheduler) tick() {
 	}
 }
 
+var indonesianDays = [...]string{
+	"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu",
+}
+
+var indonesianMonths = [...]string{
+	"Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+	"Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+}
+
 func formatReminderNotification(r ReminderWithTodo, loc *time.Location) string {
-	return fmt.Sprintf("🔔 Reminder!\n📌 %s\n\nReply \"done %s\" untuk menandai selesai.", r.TodoTitle, r.TodoTitle)
+	t := r.RemindAt.In(loc)
+	dateStr := fmt.Sprintf("%s, %d %s %d · %02d:%02d",
+		indonesianDays[t.Weekday()], t.Day(), indonesianMonths[t.Month()-1], t.Year(),
+		t.Hour(), t.Minute(),
+	)
+
+	if r.IsRecurring && r.RecurrenceRule != nil {
+		header := recurringHeader(*r.RecurrenceRule)
+		detail := recurringDetail(*r.RecurrenceRule, t)
+		msg := fmt.Sprintf("🔔 %s\n\n📌 %s\n📅 %s\n🔁 %s", header, r.TodoTitle, dateStr, detail)
+		msg += fmt.Sprintf("\n\nKetik \"done %s\" untuk selesaikan", r.TodoTitle)
+		return msg
+	}
+
+	msg := fmt.Sprintf("🔔 Reminder\n\n📌 %s\n📅 %s", r.TodoTitle, dateStr)
+	msg += fmt.Sprintf("\n\nKetik \"done %s\" untuk selesaikan", r.TodoTitle)
+	return msg
+}
+
+func recurringHeader(rule string) string {
+	switch {
+	case rule == "daily":
+		return "Reminder Harian"
+	case strings.HasPrefix(rule, "weekly:"):
+		return "Reminder Mingguan"
+	case strings.HasPrefix(rule, "monthly:"):
+		return "Reminder Bulanan"
+	case strings.HasPrefix(rule, "yearly:"):
+		return "Reminder Tahunan"
+	default:
+		return "Reminder"
+	}
+}
+
+func recurringDetail(rule string, t time.Time) string {
+	switch {
+	case rule == "daily":
+		return fmt.Sprintf("Setiap hari jam %02d:%02d", t.Hour(), t.Minute())
+	case strings.HasPrefix(rule, "weekly:"):
+		dayStr := strings.TrimPrefix(rule, "weekly:")
+		dayName := indonesianDayName(dayStr)
+		return fmt.Sprintf("Setiap hari %s", dayName)
+	case strings.HasPrefix(rule, "monthly:"):
+		dateStr := strings.TrimPrefix(rule, "monthly:")
+		return fmt.Sprintf("Setiap tanggal %s", dateStr)
+	case strings.HasPrefix(rule, "yearly:"):
+		dateStr := strings.TrimPrefix(rule, "yearly:")
+		parts := strings.Split(dateStr, "-")
+		if len(parts) == 2 {
+			month, _ := strconv.Atoi(parts[0])
+			if month >= 1 && month <= 12 {
+				return fmt.Sprintf("Setiap %s %s", parts[1], indonesianMonths[month-1])
+			}
+		}
+		return "Setiap tahun"
+	default:
+		return "Recurring"
+	}
+}
+
+func indonesianDayName(day string) string {
+	switch strings.ToLower(day) {
+	case "mon", "senin":
+		return "Senin"
+	case "tue", "selasa":
+		return "Selasa"
+	case "wed", "rabu":
+		return "Rabu"
+	case "thu", "kamis":
+		return "Kamis"
+	case "fri", "jumat":
+		return "Jumat"
+	case "sat", "sabtu":
+		return "Sabtu"
+	case "sun", "minggu":
+		return "Minggu"
+	default:
+		return day
+	}
 }
 
 func calculateNext(current time.Time, rule string, loc *time.Location) time.Time {
