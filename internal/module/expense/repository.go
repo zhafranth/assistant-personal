@@ -168,6 +168,20 @@ func (r *Repository) FindBySearch(ctx context.Context, userID int64, search stri
 	return &e, nil
 }
 
+func (r *Repository) FindAllBySearch(ctx context.Context, userID int64, search string) ([]Expense, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, description, amount, is_paid, recorded_at FROM expenses
+		 WHERE user_id = $1 AND description ILIKE '%' || $2 || '%'
+		 ORDER BY recorded_at DESC`,
+		userID, search,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find all expenses: %w", err)
+	}
+	defer rows.Close()
+	return scanExpenses(rows)
+}
+
 func (r *Repository) MarkPaid(ctx context.Context, id int) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE expenses SET is_paid = TRUE WHERE id = $1`, id)
@@ -183,6 +197,67 @@ func (r *Repository) Delete(ctx context.Context, id int) error {
 		return fmt.Errorf("delete expense: %w", err)
 	}
 	return nil
+}
+
+// ListYearsForMonth returns distinct years that have expenses for the given month (1-12).
+func (r *Repository) ListYearsForMonth(ctx context.Context, userID int64, month int, loc *time.Location) ([]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT EXTRACT(YEAR FROM recorded_at AT TIME ZONE $1)::int AS yr
+		 FROM expenses
+		 WHERE user_id = $2 AND EXTRACT(MONTH FROM recorded_at AT TIME ZONE $1)::int = $3
+		 ORDER BY yr`,
+		loc.String(), userID, month,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list years for month: %w", err)
+	}
+	defer rows.Close()
+	var years []int
+	for rows.Next() {
+		var y int
+		if err := rows.Scan(&y); err != nil {
+			return nil, fmt.Errorf("scan year: %w", err)
+		}
+		years = append(years, y)
+	}
+	return years, rows.Err()
+}
+
+// ClearByMonth deletes all expenses for a user in the given year/month. Returns count deleted.
+func (r *Repository) ClearByMonth(ctx context.Context, userID int64, year int, month time.Month, loc *time.Location) (int64, error) {
+	start := time.Date(year, month, 1, 0, 0, 0, 0, loc)
+	end := start.AddDate(0, 1, 0)
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM expenses WHERE user_id = $1 AND recorded_at >= $2 AND recorded_at < $3`,
+		userID, start, end,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("clear expenses by month: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// UpdateExpense updates description and/or is_paid for a specific expense.
+func (r *Repository) UpdateExpense(ctx context.Context, id int, newDescription *string, newIsPaid *bool) error {
+	if newDescription == nil && newIsPaid == nil {
+		return nil
+	}
+	if newDescription != nil && newIsPaid != nil {
+		_, err := r.db.ExecContext(ctx,
+			`UPDATE expenses SET description = $1, is_paid = $2 WHERE id = $3`,
+			*newDescription, *newIsPaid, id)
+		return err
+	}
+	if newDescription != nil {
+		_, err := r.db.ExecContext(ctx,
+			`UPDATE expenses SET description = $1 WHERE id = $2`,
+			*newDescription, id)
+		return err
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE expenses SET is_paid = $1 WHERE id = $2`,
+		*newIsPaid, id)
+	return err
 }
 
 func scanExpenses(rows *sql.Rows) ([]Expense, error) {

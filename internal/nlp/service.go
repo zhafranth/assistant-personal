@@ -58,6 +58,12 @@ CONTOH BULK:
 - "catat makan siang 35rb, bensin 50rb, parkir 5rb" → 3 elemen add_expense
 - "catat makan siang 35rb dan bensin 50rb" → 2 elemen add_expense
 - "hapus pengeluaran parkir dan bensin" → 2 elemen delete_expense (search="parkir", search="bensin")
+- "lunasi beli kecap" → 1 elemen pay_expense (BUKAN add_expense)
+- "lunasi beli kecap 20rb" → 1 elemen pay_expense dengan search="beli kecap", amount=20000
+- "hapus beli kecap 14 feb" → 1 elemen delete_expense dengan search="beli kecap", date="2026-02-14"
+- "ganti nama bensin jadi bensin motor" → 1 elemen edit_expense dengan search="bensin", new_title="bensin motor"
+- "tandai beli kecap 20rb sudah lunas" → 1 elemen edit_expense dengan search="beli kecap", amount=20000, new_is_paid=true
+- "kosongkan februari 2026" → 1 elemen clear_expense dengan month=2, year=2026
 
 INTENTS:
 - add_todo: {title, reminder?, remind_at?, recurring?, due_date?}
@@ -66,10 +72,12 @@ INTENTS:
 - delete_todo: {search}
 - edit_todo: {search, title?, due_date?, remind_at?}
 - clear_todo: {} (HANYA jika user ingin menghapus/mengosongkan semua todo sekaligus tanpa menyebut nama spesifik: "kosongkan todo", "hapus semua todo", "clear todo list". JANGAN gunakan ini jika user menyebut nama todo tertentu — gunakan complete_todo atau delete_todo per item)
-- add_expense: {description, amount, is_paid?} (default is_paid=true. Set is_paid=false jika user bilang "hutang", "belum bayar", "belum lunas", "cicilan". Contoh: "catat hutang sewa kos 1.5jt" → is_paid=false)
-- pay_expense: {search} (user mau tandai pengeluaran sebagai lunas, contoh: "lunasi sewa kos", "bayar hutang laundry")
+- add_expense: {description, amount, is_paid?} (default is_paid=true. Set is_paid=false jika user bilang "hutang", "belum bayar", "belum lunas", "cicilan". Contoh: "catat hutang sewa kos 1.5jt" → is_paid=false. JANGAN gunakan ini untuk pesan seperti "lunasi X" atau "bayar hutang X" — itu adalah pay_expense)
+- pay_expense: {search, amount?, date?} (tandai pengeluaran lunas. Contoh: "lunasi sewa kos", "lunasi beli kecap 20rb" → search="beli kecap", amount=20000. "lunasi beli kecap 14 feb" → search="beli kecap", date="2026-02-14". Jika ada nominal → isi amount. Jika ada tanggal → isi date=YYYY-MM-DD)
 - list_expense: {filter: "today"|"this_week"|"this_month"|"all"}
-- delete_expense: {search}
+- delete_expense: {search, amount?, date?} (hapus pengeluaran. "hapus beli kecap 100rb" → search="beli kecap", amount=100000. "hapus beli kecap 14 feb" → search="beli kecap", date="2026-02-14")
+- edit_expense: {search, amount?, date?, new_title?, new_is_paid?} (edit judul atau status pengeluaran. "ganti nama bensin jadi bensin motor" → search="bensin", new_title="bensin motor". "tandai beli kecap 20rb sudah lunas" → search="beli kecap", amount=20000, new_is_paid=true. "ubah beli kecap jadi belum lunas" → search="beli kecap", new_is_paid=false)
+- clear_expense: {month, year?} (hapus semua pengeluaran di bulan tertentu. month=1-12. "kosongkan februari 2026" → month=2, year=2026. "hapus semua pengeluaran februari" → month=2, year tidak diisi)
 - add_project: {name, due_date?, description?}
 - add_goal: {project, title, due_date?, reminder?, remind_at?, recurring?}
 - complete_goal: {project, search}

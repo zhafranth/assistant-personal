@@ -123,7 +123,8 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 		return h.expenseSvc.Add(ctx, userID, intent.Description, intent.Amount, isPaid)
 
 	case "pay_expense":
-		return h.expenseSvc.PayExpense(ctx, userID, intent.Search)
+		date, _ := intent.ParseDate(h.timezone)
+		return h.expenseSvc.PayExpense(ctx, userID, intent.Search, intent.Amount, date)
 
 	case "list_expense":
 		filter := intent.Filter
@@ -133,7 +134,15 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 		return h.expenseSvc.List(ctx, userID, filter)
 
 	case "delete_expense":
-		return h.expenseSvc.Delete(ctx, userID, intent.Search)
+		date, _ := intent.ParseDate(h.timezone)
+		return h.expenseSvc.Delete(ctx, userID, intent.Search, intent.Amount, date)
+
+	case "edit_expense":
+		date, _ := intent.ParseDate(h.timezone)
+		return h.expenseSvc.Edit(ctx, userID, intent.Search, intent.Amount, date, intent.NewTitle, intent.NewIsPaid)
+
+	case "clear_expense":
+		return h.expenseSvc.ClearByMonth(ctx, userID, intent.Month, intent.Year)
 
 	// === Project ===
 	case "add_project":
@@ -255,8 +264,14 @@ func helpText() string {
 
 💰 Pengeluaran:
 • "catat makan siang 35rb"
+• "catat makan siang 35rb, bensin 50rb" (bulk)
 • "catat hutang sewa kos 1.5jt" (belum lunas)
 • "lunasi sewa kos"
+• "lunasi beli kecap 20rb" (jika nama sama, sebut harga)
+• "hapus beli kecap 14 feb" (filter by tanggal)
+• "ganti nama bensin jadi bensin motor"
+• "tandai beli kecap 20rb sudah lunas"
+• "kosongkan februari 2026"
 • "pengeluaran hari ini"
 • "pengeluaran bulan ini"
 • "semua pengeluaran"

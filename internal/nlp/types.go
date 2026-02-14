@@ -20,6 +20,23 @@ type ParsedIntent struct {
 	DueDate     string  `json:"due_date,omitempty"`
 	IsPaid      *bool   `json:"is_paid,omitempty"`
 	Raw         string  `json:"raw,omitempty"`
+	// Expense-specific fields
+	Date        string  `json:"date,omitempty"`       // filter by recorded date (YYYY-MM-DD)
+	Month       int     `json:"month,omitempty"`      // 1-12, for clear_expense
+	Year        int     `json:"year,omitempty"`       // e.g. 2026, for clear_expense
+	NewTitle    string  `json:"new_title,omitempty"`  // edit_expense: new description
+	NewIsPaid   *bool   `json:"new_is_paid,omitempty"` // edit_expense: new paid status
+}
+
+func (p *ParsedIntent) ParseDate(loc *time.Location) (*time.Time, error) {
+	if p.Date == "" {
+		return nil, nil
+	}
+	t, err := time.ParseInLocation("2006-01-02", p.Date, loc)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported date format: %s", p.Date)
+	}
+	return &t, nil
 }
 
 func (p *ParsedIntent) ParseRemindAt(loc *time.Location) (*time.Time, error) {

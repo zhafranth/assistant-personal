@@ -70,16 +70,23 @@ func (s *Service) List(ctx context.Context, userID int64, filter string) (string
 }
 
 // PayExpense marks an expense as paid.
-func (s *Service) PayExpense(ctx context.Context, userID int64, search string) (string, error) {
-	expense, err := s.repo.FindBySearch(ctx, userID, search)
+// amount and date are optional disambiguators when multiple expenses share the same description.
+func (s *Service) PayExpense(ctx context.Context, userID int64, search string, amount int64, date *time.Time) (string, error) {
+	matches, err := s.repo.FindAllBySearch(ctx, userID, search)
 	if err != nil {
 		return "", err
 	}
-	if expense == nil {
+	if len(matches) == 0 {
 		return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
 	}
+
+	expense := s.pickExpense(matches, amount, date)
+	if expense == nil {
+		return s.formatDisambiguation(search, matches, "lunasi"), nil
+	}
+
 	if expense.IsPaid {
-		return fmt.Sprintf("ℹ️ \"%s\" sudah lunas.", expense.Description), nil
+		return fmt.Sprintf("ℹ️ \"%s\" — %s sudah lunas.", expense.Description, FormatRupiah(expense.Amount)), nil
 	}
 
 	if err := s.repo.MarkPaid(ctx, expense.ID); err != nil {
@@ -89,20 +96,190 @@ func (s *Service) PayExpense(ctx context.Context, userID int64, search string) (
 	return fmt.Sprintf("✅ Lunas: \"%s\" — %s", expense.Description, FormatRupiah(expense.Amount)), nil
 }
 
-func (s *Service) Delete(ctx context.Context, userID int64, search string) (string, error) {
-	expense, err := s.repo.FindBySearch(ctx, userID, search)
+// Delete removes an expense.
+// amount and date are optional disambiguators when multiple expenses share the same description.
+func (s *Service) Delete(ctx context.Context, userID int64, search string, amount int64, date *time.Time) (string, error) {
+	matches, err := s.repo.FindAllBySearch(ctx, userID, search)
 	if err != nil {
 		return "", err
 	}
-	if expense == nil {
+	if len(matches) == 0 {
 		return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
+	}
+
+	expense := s.pickExpense(matches, amount, date)
+	if expense == nil {
+		return s.formatDisambiguation(search, matches, "hapus"), nil
 	}
 
 	if err := s.repo.Delete(ctx, expense.ID); err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("🗑️ Pengeluaran dihapus: %s — %s", expense.Description, FormatRupiah(expense.Amount)), nil
+	return fmt.Sprintf("🗑️ Dihapus: \"%s\" — %s", expense.Description, FormatRupiah(expense.Amount)), nil
+}
+
+// Edit updates description and/or paid status of an expense.
+// amount and date are optional disambiguators.
+func (s *Service) Edit(ctx context.Context, userID int64, search string, amount int64, date *time.Time, newTitle string, newIsPaid *bool) (string, error) {
+	if newTitle == "" && newIsPaid == nil {
+		return "ℹ️ Tidak ada perubahan yang diminta.", nil
+	}
+
+	matches, err := s.repo.FindAllBySearch(ctx, userID, search)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
+	}
+
+	expense := s.pickExpense(matches, amount, date)
+	if expense == nil {
+		return s.formatDisambiguation(search, matches, "edit"), nil
+	}
+
+	var descPtr *string
+	if newTitle != "" {
+		descPtr = &newTitle
+	}
+	if err := s.repo.UpdateExpense(ctx, expense.ID, descPtr, newIsPaid); err != nil {
+		return "", fmt.Errorf("update expense: %w", err)
+	}
+
+	displayDesc := expense.Description
+	if newTitle != "" {
+		displayDesc = newTitle
+	}
+	statusStr := ""
+	if newIsPaid != nil {
+		if *newIsPaid {
+			statusStr = " · ✅ Lunas"
+		} else {
+			statusStr = " · 🔴 Belum lunas"
+		}
+	}
+	return fmt.Sprintf("✏️ Pengeluaran diperbarui: \"%s\" — %s%s", displayDesc, FormatRupiah(expense.Amount), statusStr), nil
+}
+
+// ClearByMonth deletes all expenses for a specific year/month.
+// If year is 0 and the month exists across multiple years, returns a disambiguation prompt.
+func (s *Service) ClearByMonth(ctx context.Context, userID int64, month, year int) (string, error) {
+	if month < 1 || month > 12 {
+		return "❌ Bulan tidak valid.", nil
+	}
+
+	if year == 0 {
+		years, err := s.repo.ListYearsForMonth(ctx, userID, month, s.timezone)
+		if err != nil {
+			return "", err
+		}
+		if len(years) == 0 {
+			return fmt.Sprintf("📭 Tidak ada pengeluaran di %s.", indonesianMonthsFull[month-1]), nil
+		}
+		if len(years) > 1 {
+			lines := []string{fmt.Sprintf("🔍 Pengeluaran \"%s\" ada di beberapa tahun:\n", indonesianMonthsFull[month-1])}
+			for _, y := range years {
+				lines = append(lines, fmt.Sprintf("• %s %d", indonesianMonthsFull[month-1], y))
+			}
+			lines = append(lines, "\nSebutkan tahunnya, contoh:")
+			lines = append(lines, fmt.Sprintf("• \"kosongkan %s %d\"", indonesianMonthsFull[month-1], years[len(years)-1]))
+			return strings.Join(lines, "\n"), nil
+		}
+		year = years[0]
+	}
+
+	count, err := s.repo.ClearByMonth(ctx, userID, year, time.Month(month), s.timezone)
+	if err != nil {
+		return "", err
+	}
+	if count == 0 {
+		return fmt.Sprintf("📭 Tidak ada pengeluaran di %s %d.", indonesianMonthsFull[month-1], year), nil
+	}
+	return fmt.Sprintf("🗑️ %d pengeluaran di %s %d dihapus.", count, indonesianMonthsFull[month-1], year), nil
+}
+
+// pickExpense returns the single matching expense.
+// Filters by amount (if > 0) and by recorded date (if non-nil). Returns nil when ambiguous.
+func (s *Service) pickExpense(matches []Expense, amount int64, date *time.Time) *Expense {
+	if len(matches) == 1 {
+		return &matches[0]
+	}
+
+	filtered := matches
+	if date != nil {
+		d := date.In(s.timezone)
+		dayStart := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, s.timezone)
+		dayEnd := dayStart.AddDate(0, 0, 1)
+		var byDate []Expense
+		for _, e := range filtered {
+			t := e.RecordedAt.In(s.timezone)
+			if !t.Before(dayStart) && t.Before(dayEnd) {
+				byDate = append(byDate, e)
+			}
+		}
+		filtered = byDate
+	}
+	if amount > 0 {
+		var byAmount []Expense
+		for _, e := range filtered {
+			if e.Amount == amount {
+				byAmount = append(byAmount, e)
+			}
+		}
+		filtered = byAmount
+	}
+
+	if len(filtered) == 1 {
+		return &filtered[0]
+	}
+	return nil
+}
+
+// formatDisambiguation builds a disambiguation message listing all matching expenses.
+func (s *Service) formatDisambiguation(search string, matches []Expense, action string) string {
+	lines := []string{
+		fmt.Sprintf("🔍 Ada %d pengeluaran \"%s\":\n", len(matches), search),
+	}
+	for i, e := range matches {
+		t := e.RecordedAt.In(s.timezone)
+		statusIcon := "✅"
+		statusLabel := "Lunas"
+		if !e.IsPaid {
+			statusIcon = "🔴"
+			statusLabel = "Belum lunas"
+		}
+		lines = append(lines, fmt.Sprintf("%d. 📅 %d %s %d · %s · %s %s",
+			i+1,
+			t.Day(), indonesianMonths[t.Month()-1], t.Year(),
+			FormatRupiah(e.Amount),
+			statusIcon, statusLabel,
+		))
+	}
+
+	// Build example commands
+	lines = append(lines, "\nSebutkan lebih spesifik dengan harga:")
+	for _, e := range matches {
+		rupiahShort := formatRupiahShort(e.Amount)
+		lines = append(lines, fmt.Sprintf("• \"%s %s %s\"", action, search, rupiahShort))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// formatRupiahShort converts amount to shorthand: 35000 → "35rb", 1500000 → "1.5jt".
+func formatRupiahShort(amount int64) string {
+	switch {
+	case amount >= 1_000_000 && amount%1_000_000 == 0:
+		return fmt.Sprintf("%djt", amount/1_000_000)
+	case amount >= 1_000_000:
+		f := float64(amount) / 1_000_000
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2fjt", f), "0"), ".")
+	case amount >= 1_000 && amount%1_000 == 0:
+		return fmt.Sprintf("%drb", amount/1_000)
+	default:
+		return fmt.Sprintf("%d", amount)
+	}
 }
 
 // MonthlyReport generates a full monthly report (Template 4).
