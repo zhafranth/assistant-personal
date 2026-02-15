@@ -79,7 +79,14 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 	case "add_todo":
 		remindAt, _ := intent.ParseRemindAt(h.timezone)
 		dueDate, _ := intent.ParseDueDate(h.timezone)
-		return h.todoSvc.Add(ctx, userID, intent.Title, dueDate, intent.Reminder, remindAt, intent.Recurring)
+		msg, err := h.todoSvc.Add(ctx, userID, intent.Title, dueDate, intent.Reminder, remindAt, intent.Recurring)
+		if err != nil {
+			return "", err
+		}
+		if isNonSuccessMsg(msg) {
+			return msg, nil
+		}
+		return h.todoListResponse(ctx, userID)
 
 	case "list_todo":
 		filter := intent.Filter
@@ -101,18 +108,46 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 		return h.dailyBriefing(ctx, userID)
 
 	case "complete_todo":
-		return h.todoSvc.Complete(ctx, userID, intent.Search)
+		msg, err := h.todoSvc.Complete(ctx, userID, intent.Search)
+		if err != nil {
+			return "", err
+		}
+		if isNonSuccessMsg(msg) {
+			return msg, nil
+		}
+		return h.todoListResponse(ctx, userID)
 
 	case "edit_todo":
 		dueDate, _ := intent.ParseDueDate(h.timezone)
 		remindAt, _ := intent.ParseRemindAt(h.timezone)
-		return h.todoSvc.Edit(ctx, userID, intent.Search, intent.Title, dueDate, remindAt)
+		msg, err := h.todoSvc.Edit(ctx, userID, intent.Search, intent.Title, dueDate, remindAt)
+		if err != nil {
+			return "", err
+		}
+		if isNonSuccessMsg(msg) {
+			return msg, nil
+		}
+		return h.todoListResponse(ctx, userID)
 
 	case "clear_todo":
-		return h.todoSvc.ClearAll(ctx, userID)
+		msg, err := h.todoSvc.ClearAll(ctx, userID)
+		if err != nil {
+			return "", err
+		}
+		if isNonSuccessMsg(msg) {
+			return msg, nil
+		}
+		return h.todoListResponse(ctx, userID)
 
 	case "delete_todo":
-		return h.todoSvc.Delete(ctx, userID, intent.Search)
+		msg, err := h.todoSvc.Delete(ctx, userID, intent.Search)
+		if err != nil {
+			return "", err
+		}
+		if isNonSuccessMsg(msg) {
+			return msg, nil
+		}
+		return h.todoListResponse(ctx, userID)
 
 	// === Expense ===
 	case "add_expense":
@@ -246,6 +281,27 @@ func (h *Handler) handleProjects(c tele.Context) error {
 		return c.Send("⚠️ Gagal mengambil daftar project.")
 	}
 	return c.Send(resp)
+}
+
+// todoListResponse fetches the full todo list with reminders and returns it formatted.
+func (h *Handler) todoListResponse(ctx context.Context, userID int64) (string, error) {
+	todos, err := h.todoSvc.List(ctx, userID, "all")
+	if err != nil {
+		return "", err
+	}
+	reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		slog.Error("list reminders for todo list failed", "error", err)
+		reminders = nil
+	}
+	return FormatTodoList(todos, "all", h.timezone, reminders), nil
+}
+
+// isNonSuccessMsg returns true when the message is an error or info notice
+// (i.e. the operation did not actually mutate anything) so it should be shown
+// verbatim instead of being replaced by the todo list.
+func isNonSuccessMsg(msg string) bool {
+	return strings.HasPrefix(msg, "❌") || strings.HasPrefix(msg, "ℹ️")
 }
 
 func helpText() string {
