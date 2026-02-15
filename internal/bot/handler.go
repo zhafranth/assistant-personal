@@ -135,11 +135,11 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 
 	case "delete_expense":
 		date, _ := intent.ParseDate(h.timezone)
-		return h.expenseSvc.Delete(ctx, userID, intent.Search, intent.Amount, date)
+		return h.expenseSvc.Delete(ctx, userID, intent.ExpenseID, intent.Search, intent.Amount, date)
 
 	case "edit_expense":
 		date, _ := intent.ParseDate(h.timezone)
-		return h.expenseSvc.Edit(ctx, userID, intent.Search, intent.Amount, date, intent.NewTitle, intent.NewIsPaid)
+		return h.expenseSvc.Edit(ctx, userID, intent.ExpenseID, intent.Search, intent.Amount, date, intent.NewTitle, intent.NewIsPaid)
 
 	case "clear_expense":
 		return h.expenseSvc.ClearByMonth(ctx, userID, intent.Month, intent.Year)

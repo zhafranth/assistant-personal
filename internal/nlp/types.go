@@ -26,6 +26,7 @@ type ParsedIntent struct {
 	Year        int     `json:"year,omitempty"`       // e.g. 2026, for clear_expense
 	NewTitle    string  `json:"new_title,omitempty"`  // edit_expense: new description
 	NewIsPaid   *bool   `json:"new_is_paid,omitempty"` // edit_expense: new paid status
+	ExpenseID   int     `json:"expense_id,omitempty"` // direct ID reference for delete/edit
 }
 
 func (p *ParsedIntent) ParseDate(loc *time.Location) (*time.Time, error) {

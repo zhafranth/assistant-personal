@@ -182,6 +182,22 @@ func (r *Repository) FindAllBySearch(ctx context.Context, userID int64, search s
 	return scanExpenses(rows)
 }
 
+func (r *Repository) FindByID(ctx context.Context, userID int64, id int) (*Expense, error) {
+	var e Expense
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, description, amount, is_paid, recorded_at FROM expenses
+		 WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&e.ID, &e.UserID, &e.Description, &e.Amount, &e.IsPaid, &e.RecordedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find expense by id: %w", err)
+	}
+	return &e, nil
+}
+
 func (r *Repository) MarkPaid(ctx context.Context, id int) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE expenses SET is_paid = TRUE WHERE id = $1`, id)

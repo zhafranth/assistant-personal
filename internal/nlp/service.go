@@ -68,8 +68,10 @@ CONTOH BULK:
 - "lunasi beli kecap" → 1 elemen pay_expense (BUKAN add_expense)
 - "lunasi beli kecap 20rb" → 1 elemen pay_expense dengan search="beli kecap", amount=20000
 - "hapus beli kecap 14 feb" → 1 elemen delete_expense dengan search="beli kecap", date="2026-02-14"
+- "hapus id 123" → 1 elemen delete_expense dengan expense_id=123
 - "ganti nama bensin jadi bensin motor" → 1 elemen edit_expense dengan search="bensin", new_title="bensin motor"
 - "tandai beli kecap 20rb sudah lunas" → 1 elemen edit_expense dengan search="beli kecap", amount=20000, new_is_paid=true
+- "edit id 456 jadi bensin motor" → 1 elemen edit_expense dengan expense_id=456, new_title="bensin motor"
 - "kosongkan februari 2026" → 1 elemen clear_expense dengan month=2, year=2026
 
 INTENTS:
@@ -82,8 +84,8 @@ INTENTS:
 - add_expense: {description, amount, is_paid?} (default is_paid=true. Set is_paid=false jika user bilang "hutang", "belum bayar", "belum lunas", "cicilan". Contoh: "catat hutang sewa kos 1.5jt" → is_paid=false. JANGAN gunakan ini untuk pesan seperti "lunasi X" atau "bayar hutang X" — itu adalah pay_expense)
 - pay_expense: {search, amount?, date?} (tandai pengeluaran lunas. Contoh: "lunasi sewa kos", "lunasi beli kecap 20rb" → search="beli kecap", amount=20000. "lunasi beli kecap 14 feb" → search="beli kecap", date="2026-02-14". Jika ada nominal → isi amount. Jika ada tanggal → isi date=YYYY-MM-DD)
 - list_expense: {filter: "today"|"this_week"|"this_month"|"all"}
-- delete_expense: {search, amount?, date?} (hapus pengeluaran. "hapus beli kecap 100rb" → search="beli kecap", amount=100000. "hapus beli kecap 14 feb" → search="beli kecap", date="2026-02-14")
-- edit_expense: {search, amount?, date?, new_title?, new_is_paid?} (edit judul atau status pengeluaran. "ganti nama bensin jadi bensin motor" → search="bensin", new_title="bensin motor". "tandai beli kecap 20rb sudah lunas" → search="beli kecap", amount=20000, new_is_paid=true. "ubah beli kecap jadi belum lunas" → search="beli kecap", new_is_paid=false)
+- delete_expense: {search?, amount?, date?, expense_id?} (hapus pengeluaran. "hapus beli kecap 100rb" → search="beli kecap", amount=100000. "hapus beli kecap 14 feb" → search="beli kecap", date="2026-02-14". "hapus id 123" → expense_id=123)
+- edit_expense: {search?, amount?, date?, new_title?, new_is_paid?, expense_id?} (edit judul atau status pengeluaran. "ganti nama bensin jadi bensin motor" → search="bensin", new_title="bensin motor". "tandai beli kecap 20rb sudah lunas" → search="beli kecap", amount=20000, new_is_paid=true. "ubah beli kecap jadi belum lunas" → search="beli kecap", new_is_paid=false. "edit id 456 jadi bensin motor" → expense_id=456, new_title="bensin motor")
 - clear_expense: {month, year?} (hapus semua pengeluaran di bulan tertentu. month=1-12. "kosongkan februari 2026" → month=2, year=2026. "hapus semua pengeluaran februari" → month=2, year tidak diisi)
 - add_project: {name, due_date?, description?}
 - add_goal: {project, title, due_date?, reminder?, remind_at?, recurring?} (project WAJIB diisi. Jika bulk: tiap goal = 1 elemen dengan project yang sama)

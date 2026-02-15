@@ -97,46 +97,74 @@ func (s *Service) PayExpense(ctx context.Context, userID int64, search string, a
 }
 
 // Delete removes an expense.
+// expenseID: if > 0, look up directly by ID (bypasses search).
 // amount and date are optional disambiguators when multiple expenses share the same description.
-func (s *Service) Delete(ctx context.Context, userID int64, search string, amount int64, date *time.Time) (string, error) {
-	matches, err := s.repo.FindAllBySearch(ctx, userID, search)
-	if err != nil {
+func (s *Service) Delete(ctx context.Context, userID int64, expenseID int, search string, amount int64, date *time.Time) (string, error) {
+	var exp *Expense
+
+	if expenseID > 0 {
+		found, err := s.repo.FindByID(ctx, userID, expenseID)
+		if err != nil {
+			return "", err
+		}
+		if found == nil {
+			return fmt.Sprintf("❌ Pengeluaran dengan ID #%d tidak ditemukan.", expenseID), nil
+		}
+		exp = found
+	} else {
+		matches, err := s.repo.FindAllBySearch(ctx, userID, search)
+		if err != nil {
+			return "", err
+		}
+		if len(matches) == 0 {
+			return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
+		}
+
+		exp = s.pickExpense(matches, amount, date)
+		if exp == nil {
+			return s.formatDisambiguation(search, matches, "hapus"), nil
+		}
+	}
+
+	if err := s.repo.Delete(ctx, exp.ID); err != nil {
 		return "", err
 	}
-	if len(matches) == 0 {
-		return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
-	}
 
-	expense := s.pickExpense(matches, amount, date)
-	if expense == nil {
-		return s.formatDisambiguation(search, matches, "hapus"), nil
-	}
-
-	if err := s.repo.Delete(ctx, expense.ID); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("🗑️ Dihapus: \"%s\" — %s", expense.Description, FormatRupiah(expense.Amount)), nil
+	return fmt.Sprintf("🗑️ Dihapus: \"%s\" — %s", exp.Description, FormatRupiah(exp.Amount)), nil
 }
 
 // Edit updates description and/or paid status of an expense.
+// expenseID: if > 0, look up directly by ID (bypasses search).
 // amount and date are optional disambiguators.
-func (s *Service) Edit(ctx context.Context, userID int64, search string, amount int64, date *time.Time, newTitle string, newIsPaid *bool) (string, error) {
+func (s *Service) Edit(ctx context.Context, userID int64, expenseID int, search string, amount int64, date *time.Time, newTitle string, newIsPaid *bool) (string, error) {
 	if newTitle == "" && newIsPaid == nil {
 		return "ℹ️ Tidak ada perubahan yang diminta.", nil
 	}
 
-	matches, err := s.repo.FindAllBySearch(ctx, userID, search)
-	if err != nil {
-		return "", err
-	}
-	if len(matches) == 0 {
-		return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
-	}
+	var expense *Expense
 
-	expense := s.pickExpense(matches, amount, date)
-	if expense == nil {
-		return s.formatDisambiguation(search, matches, "edit"), nil
+	if expenseID > 0 {
+		found, err := s.repo.FindByID(ctx, userID, expenseID)
+		if err != nil {
+			return "", err
+		}
+		if found == nil {
+			return fmt.Sprintf("❌ Pengeluaran dengan ID #%d tidak ditemukan.", expenseID), nil
+		}
+		expense = found
+	} else {
+		matches, err := s.repo.FindAllBySearch(ctx, userID, search)
+		if err != nil {
+			return "", err
+		}
+		if len(matches) == 0 {
+			return fmt.Sprintf("❌ Pengeluaran \"%s\" tidak ditemukan.", search), nil
+		}
+
+		expense = s.pickExpense(matches, amount, date)
+		if expense == nil {
+			return s.formatDisambiguation(search, matches, "edit"), nil
+		}
 	}
 
 	var descPtr *string
@@ -236,12 +264,12 @@ func (s *Service) pickExpense(matches []Expense, amount int64, date *time.Time) 
 	return nil
 }
 
-// formatDisambiguation builds a disambiguation message listing all matching expenses.
+// formatDisambiguation builds a disambiguation message listing all matching expenses with their IDs.
 func (s *Service) formatDisambiguation(search string, matches []Expense, action string) string {
 	lines := []string{
 		fmt.Sprintf("🔍 Ada %d pengeluaran \"%s\":\n", len(matches), search),
 	}
-	for i, e := range matches {
+	for _, e := range matches {
 		t := e.RecordedAt.In(s.timezone)
 		statusIcon := "✅"
 		statusLabel := "Lunas"
@@ -249,19 +277,18 @@ func (s *Service) formatDisambiguation(search string, matches []Expense, action 
 			statusIcon = "🔴"
 			statusLabel = "Belum lunas"
 		}
-		lines = append(lines, fmt.Sprintf("%d. 📅 %d %s %d · %s · %s %s",
-			i+1,
+		lines = append(lines, fmt.Sprintf("#%d · 📅 %d %s %d · %s · %s %s",
+			e.ID,
 			t.Day(), indonesianMonths[t.Month()-1], t.Year(),
 			FormatRupiah(e.Amount),
 			statusIcon, statusLabel,
 		))
 	}
 
-	// Build example commands
-	lines = append(lines, "\nSebutkan lebih spesifik dengan harga:")
+	// Build example commands using ID
+	lines = append(lines, fmt.Sprintf("\nSebutkan ID-nya untuk diproses, contoh:"))
 	for _, e := range matches {
-		rupiahShort := formatRupiahShort(e.Amount)
-		lines = append(lines, fmt.Sprintf("• \"%s %s %s\"", action, search, rupiahShort))
+		lines = append(lines, fmt.Sprintf("• \"%s id %d\"", action, e.ID))
 	}
 
 	return strings.Join(lines, "\n")
