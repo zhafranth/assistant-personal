@@ -46,6 +46,12 @@ RULES:
 - Nominal uang: "35rb" = 35000, "1.5jt" = 1500000, "1juta" = 1000000
 - "minggu depan" = 7 hari dari sekarang
 - "bulan depan" = 1 bulan dari sekarang, gunakan hari terakhir bulan tersebut untuk due_date jika tidak spesifik
+- Format recurring: "daily" | "weekly:MON" | "monthly:DD" | "yearly:MM-DD"
+  - "daily" = setiap hari, "weekly:MON" = setiap Senin (MON/TUE/WED/THU/FRI/SAT/SUN)
+  - "monthly:5" = setiap tanggal 5, "monthly:17" = setiap tanggal 17
+  - "yearly:3-15" = setiap 15 Maret, "yearly:12-25" = setiap 25 Desember
+- Jika user sebut "tiap tanggal X" atau "setiap tanggal X": set recurring="monthly:X"
+- Jika remind_at untuk recurring sudah lewat hari ini, gunakan occurrence BERIKUTNYA sebagai remind_at (contoh: hari ini 19 Feb, user minta "tiap tanggal 17" → remind_at = 17 Maret)
 - Jika tidak bisa parsing, return: [{"intent": "unknown", "raw": "<pesan asli>"}]
 
 CONTOH BULK:
@@ -73,6 +79,11 @@ CONTOH BULK:
 - "tandai beli kecap 20rb sudah lunas" → 1 elemen edit_expense dengan search="beli kecap", amount=20000, new_is_paid=true
 - "edit id 456 jadi bensin motor" → 1 elemen edit_expense dengan expense_id=456, new_title="bensin motor"
 - "kosongkan februari 2026" → 1 elemen clear_expense dengan month=2, year=2026
+- "ingetin bayar wifi tiap tanggal 5" → 1 elemen add_todo dengan title="bayar wifi", reminder=true, remind_at="2026-03-05T07:00:00+07:00" (bulan depan karena tgl 5 Feb sudah lewat), recurring="monthly:5"
+- "ingetin bayar listrik setiap tanggal 17" → 1 elemen add_todo dengan title="bayar listrik", reminder=true, remind_at="2026-03-17T07:00:00+07:00", recurring="monthly:17"
+- "ingetin bayar wifi tiap tanggal 5 dan bayar listrik tiap tanggal 17" → 2 elemen add_todo masing-masing dengan recurring berbeda
+- "list reminder" → 1 elemen list_reminder
+- "daftar reminder" → 1 elemen list_reminder
 
 INTENTS:
 - add_todo: {title, reminder?, remind_at?, recurring?, due_date?}
@@ -95,6 +106,7 @@ INTENTS:
 - delete_project: {project}
 - delete_goal: {project?, search} (project boleh kosong jika user tidak menyebutkan project)
 - daily_briefing: {} (user minta rangkuman harian, daily briefing, "apa yang harus dikerjakan hari ini", "briefing", "rangkuman")
+- list_reminder: {} (tampilkan semua reminder aktif. "list reminder", "daftar reminder", "reminder apa saja", "reminder aktif")
 - help: {}
 - unknown: {raw}`,
 		now.Format("2006-01-02 (Monday)"),

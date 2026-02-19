@@ -259,32 +259,32 @@ func FormatDailyBriefing(todos []todo.Todo, loc *time.Location, reminders []remi
 		}
 	}
 
-	// 🗓 Monthly reminders section
-	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-	endOfMonth := startOfMonth.AddDate(0, 1, 0)
-
-	var monthlyReminders []reminder.TodoReminder
+	// 🔁 Recurring reminders section — show ALL active recurring reminders
+	var recurringReminders []reminder.TodoReminder
 	for _, r := range reminders {
-		rt := r.RemindAt.In(loc)
-		if r.IsRecurring && !rt.Before(startOfMonth) && rt.Before(endOfMonth) {
-			monthlyReminders = append(monthlyReminders, r)
+		if r.IsRecurring {
+			recurringReminders = append(recurringReminders, r)
 		}
 	}
 
 	lines = append(lines, "")
 	lines = append(lines, "─────────────")
 	lines = append(lines, "")
-	lines = append(lines, fmt.Sprintf("🗓 Reminder Bulan Ini — %s\n", formatMonthYear(now)))
+	lines = append(lines, "🔁 Reminder Rutin\n")
 
-	if len(monthlyReminders) > 0 {
-		for _, r := range monthlyReminders {
+	if len(recurringReminders) > 0 {
+		for _, r := range recurringReminders {
 			rt := r.RemindAt.In(loc)
 			dateStr := formatDateShort(rt)
-			line := fmt.Sprintf(" %s · %s 🔁", dateStr, r.TodoTitle)
+			label := recurringLabel(r.RecurrenceRule)
+			line := fmt.Sprintf(" %s · %s", dateStr, r.TodoTitle)
+			if label != "" {
+				line += fmt.Sprintf(" (%s)", label)
+			}
 			lines = append(lines, line)
 		}
 	} else {
-		lines = append(lines, " Tidak ada reminder bulan ini")
+		lines = append(lines, " Tidak ada reminder rutin aktif")
 	}
 
 	// Summary footer
@@ -296,9 +296,116 @@ func FormatDailyBriefing(todos []todo.Todo, loc *time.Location, reminders []remi
 	if len(overdue) > 0 {
 		lines = append(lines, fmt.Sprintf("📊 Overdue: %d todo", len(overdue)))
 	}
-	lines = append(lines, fmt.Sprintf("📊 Bulan ini: %d reminder tersisa", len(monthlyReminders)))
+	lines = append(lines, fmt.Sprintf("📊 Reminder rutin: %d aktif", len(recurringReminders)))
 
 	return strings.Join(lines, "\n")
+}
+
+// FormatReminderList formats all active reminders.
+//
+// 🔔 Daftar Reminder Aktif
+//
+// 🔁 Bayar wifi
+//
+//	Bulanan · tanggal 5
+//	Berikutnya: 5 Mar 2026 07:00
+//
+// 🔁 Bayar listrik
+//
+//	Bulanan · tanggal 17
+//	Berikutnya: 17 Mar 2026 07:00
+//
+// ─────────────
+// 🔔 2  🔁 2
+func FormatReminderList(reminders []reminder.TodoReminder, loc *time.Location) string {
+	if len(reminders) == 0 {
+		return "🔔 Tidak ada reminder aktif."
+	}
+
+	var lines []string
+	lines = append(lines, "🔔 Daftar Reminder Aktif\n")
+
+	var countRecurring, countOnce int
+	for _, r := range reminders {
+		rt := r.RemindAt.In(loc)
+		nextStr := fmt.Sprintf("%d %s %d %02d:%02d",
+			rt.Day(), indonesianMonths[rt.Month()-1], rt.Year(), rt.Hour(), rt.Minute())
+
+		if r.IsRecurring {
+			countRecurring++
+			label := recurringLabel(r.RecurrenceRule)
+			detail := recurringRuleDetail(r.RecurrenceRule)
+			line := fmt.Sprintf("🔁 %s", r.TodoTitle)
+			lines = append(lines, line)
+			if detail != "" {
+				lines = append(lines, fmt.Sprintf("   %s · %s", label, detail))
+			}
+			lines = append(lines, fmt.Sprintf("   Berikutnya: %s", nextStr))
+		} else {
+			countOnce++
+			lines = append(lines, fmt.Sprintf("🔔 %s", r.TodoTitle))
+			lines = append(lines, fmt.Sprintf("   %s", nextStr))
+		}
+	}
+
+	lines = append(lines, "\n─────────────")
+	var summary []string
+	if countOnce > 0 {
+		summary = append(summary, fmt.Sprintf("🔔 %d", countOnce))
+	}
+	if countRecurring > 0 {
+		summary = append(summary, fmt.Sprintf("🔁 %d", countRecurring))
+	}
+	lines = append(lines, strings.Join(summary, "  "))
+
+	return strings.Join(lines, "\n")
+}
+
+// recurringRuleDetail returns a human-readable detail of the recurrence rule.
+func recurringRuleDetail(rule *string) string {
+	if rule == nil {
+		return ""
+	}
+	r := *rule
+	switch {
+	case r == "daily":
+		return "setiap hari"
+	case strings.HasPrefix(r, "weekly:"):
+		day := strings.TrimPrefix(r, "weekly:")
+		switch strings.ToUpper(day) {
+		case "MON", "SENIN":
+			return "setiap Senin"
+		case "TUE", "SELASA":
+			return "setiap Selasa"
+		case "WED", "RABU":
+			return "setiap Rabu"
+		case "THU", "KAMIS":
+			return "setiap Kamis"
+		case "FRI", "JUMAT":
+			return "setiap Jumat"
+		case "SAT", "SABTU":
+			return "setiap Sabtu"
+		case "SUN", "MINGGU":
+			return "setiap Minggu"
+		default:
+			return fmt.Sprintf("setiap %s", day)
+		}
+	case strings.HasPrefix(r, "monthly:"):
+		d := strings.TrimPrefix(r, "monthly:")
+		return fmt.Sprintf("tanggal %s", d)
+	case strings.HasPrefix(r, "yearly:"):
+		parts := strings.Split(strings.TrimPrefix(r, "yearly:"), "-")
+		if len(parts) == 2 {
+			m := 0
+			fmt.Sscanf(parts[0], "%d", &m)
+			if m >= 1 && m <= 12 {
+				return fmt.Sprintf("%s %s", parts[1], indonesianMonthsFull[m-1])
+			}
+		}
+		return "setiap tahun"
+	default:
+		return ""
+	}
 }
 
 // FormatOverdueNotification formats a single overdue todo follow-up.

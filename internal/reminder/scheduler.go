@@ -176,12 +176,15 @@ func indonesianDayName(day string) string {
 
 func calculateNext(current time.Time, rule string, loc *time.Location) time.Time {
 	now := time.Now().In(loc)
+	// Convert current to local timezone so hour/minute are in the user's timezone,
+	// not UTC (postgres returns TIMESTAMPTZ as UTC).
+	cur := current.In(loc)
 
 	switch {
 	case rule == "daily":
 		next := current.AddDate(0, 0, 1)
 		if next.Before(now) {
-			next = time.Date(now.Year(), now.Month(), now.Day()+1, current.Hour(), current.Minute(), 0, 0, loc)
+			next = time.Date(now.Year(), now.Month(), now.Day()+1, cur.Hour(), cur.Minute(), 0, 0, loc)
 		}
 		return next
 
@@ -194,7 +197,7 @@ func calculateNext(current time.Time, rule string, loc *time.Location) time.Time
 			next = next.AddDate(0, 0, 1)
 		}
 		if next.Before(now) {
-			next = time.Date(now.Year(), now.Month(), now.Day(), current.Hour(), current.Minute(), 0, 0, loc)
+			next = time.Date(now.Year(), now.Month(), now.Day(), cur.Hour(), cur.Minute(), 0, 0, loc)
 			for next.Weekday() != targetDay || !next.After(now) {
 				next = next.AddDate(0, 0, 1)
 			}
@@ -208,11 +211,11 @@ func calculateNext(current time.Time, rule string, loc *time.Location) time.Time
 			slog.Warn("invalid monthly recurrence rule", "rule", rule)
 			return current.AddDate(0, 0, 1)
 		}
-		next := time.Date(current.Year(), current.Month()+1, day, current.Hour(), current.Minute(), 0, 0, loc)
+		next := time.Date(cur.Year(), cur.Month()+1, day, cur.Hour(), cur.Minute(), 0, 0, loc)
 		if next.Before(now) {
-			next = time.Date(now.Year(), now.Month()+1, day, current.Hour(), current.Minute(), 0, 0, loc)
+			next = time.Date(now.Year(), now.Month()+1, day, cur.Hour(), cur.Minute(), 0, 0, loc)
 			if next.Before(now) {
-				next = time.Date(now.Year(), now.Month()+2, day, current.Hour(), current.Minute(), 0, 0, loc)
+				next = time.Date(now.Year(), now.Month()+2, day, cur.Hour(), cur.Minute(), 0, 0, loc)
 			}
 		}
 		return next
@@ -227,9 +230,9 @@ func calculateNext(current time.Time, rule string, loc *time.Location) time.Time
 				slog.Warn("invalid yearly recurrence rule", "rule", rule)
 				return current.AddDate(0, 0, 1)
 			}
-			next := time.Date(current.Year()+1, time.Month(month), day, current.Hour(), current.Minute(), 0, 0, loc)
+			next := time.Date(cur.Year()+1, time.Month(month), day, cur.Hour(), cur.Minute(), 0, 0, loc)
 			if next.Before(now) {
-				next = time.Date(now.Year()+1, time.Month(month), day, current.Hour(), current.Minute(), 0, 0, loc)
+				next = time.Date(now.Year()+1, time.Month(month), day, cur.Hour(), cur.Minute(), 0, 0, loc)
 			}
 			return next
 		}

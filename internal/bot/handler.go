@@ -42,6 +42,7 @@ func (h *Handler) Register(b *tele.Bot) {
 	b.Handle("/daily", h.handleDaily)
 	b.Handle("/expenses", h.handleExpenses)
 	b.Handle("/projects", h.handleProjects)
+	b.Handle("/reminders", h.handleReminders)
 }
 
 func (h *Handler) handleText(c tele.Context) error {
@@ -208,6 +209,14 @@ func (h *Handler) route(ctx context.Context, userID int64, intent *nlp.ParsedInt
 	case "delete_goal":
 		return h.projectSvc.DeleteGoal(ctx, userID, intent.Project, intent.Search)
 
+	// === Reminder ===
+	case "list_reminder":
+		reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+		if err != nil {
+			return "", err
+		}
+		return FormatReminderList(reminders, h.timezone), nil
+
 	// === Help ===
 	case "help":
 		return helpText(), nil
@@ -283,6 +292,17 @@ func (h *Handler) handleProjects(c tele.Context) error {
 	return c.Send(resp)
 }
 
+func (h *Handler) handleReminders(c tele.Context) error {
+	ctx := context.Background()
+	userID := c.Sender().ID
+	reminders, err := h.reminderRepo.ListActiveByUser(ctx, userID)
+	if err != nil {
+		slog.Error("list reminders failed", "error", err)
+		return c.Send("⚠️ Gagal mengambil daftar reminder.")
+	}
+	return c.Send(FormatReminderList(reminders, h.timezone))
+}
+
 // todoListResponse fetches the full todo list with reminders and returns it formatted.
 func (h *Handler) todoListResponse(ctx context.Context, userID int64) (string, error) {
 	todos, err := h.todoSvc.List(ctx, userID, "all")
@@ -342,7 +362,8 @@ func helpText() string {
 
 ⌨️ Shortcut Commands:
 /todos — List semua todo
-/daily — Daily briefing + reminder bulanan
+/daily — Daily briefing + reminder rutin
+/reminders — List semua reminder aktif
 /expenses — Pengeluaran bulan ini
 /projects — List semua project
 /help — Tampilkan bantuan ini`
